@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '0.5.2';
+    const VERSION = '0.5.3';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -716,13 +716,13 @@
         if (!v) {
             v = document.createElement('div');
             v.id = 'cc_viewer';
-            v.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+            v.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:none;background:rgba(0,0,0,0.6);';
 
             const box = document.createElement('div');
-            box.style.cssText = 'display:flex;flex-direction:column;width:min(860px,94vw);height:86vh;max-height:86vh;border-radius:10px;border:1px solid rgba(255,255,255,0.25);background:#1e1e1e;color:var(--SmartThemeBodyColor,#ddd);box-shadow:0 8px 30px rgba(0,0,0,0.5);overflow:hidden;';
+            box.style.cssText = 'position:absolute;left:3vw;right:3vw;top:70px;bottom:16px;display:flex;flex-direction:column;border-radius:10px;border:1px solid rgba(255,255,255,0.25);background:#1e1e1e;color:var(--SmartThemeBodyColor,#ddd);box-shadow:0 8px 30px rgba(0,0,0,0.5);overflow:hidden;';
 
             const head = document.createElement('div');
-            head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.2);flex:0 0 auto;';
+            head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.2);flex:0 0 auto;cursor:move;user-select:none;touch-action:none;';
 
             const titleEl = document.createElement('span');
             titleEl.id = 'cc_viewer_title';
@@ -757,6 +757,32 @@
             const hide = () => { v.style.display = 'none'; };
             xBtn.addEventListener('click', hide);
             closeBtn.addEventListener('click', hide);
+            v._box = box;
+
+            let vDrag = false, vSX = 0, vSY = 0, vBX = 0, vBY = 0;
+            head.addEventListener('pointerdown', (e) => {
+                if (e.target === copyBtn || e.target === closeBtn) return;
+                const r = box.getBoundingClientRect();
+                box.style.left = r.left + 'px';
+                box.style.top = r.top + 'px';
+                box.style.width = r.width + 'px';
+                box.style.height = r.height + 'px';
+                box.style.right = 'auto';
+                box.style.bottom = 'auto';
+                vDrag = true; vSX = e.clientX; vSY = e.clientY; vBX = r.left; vBY = r.top;
+                head.setPointerCapture?.(e.pointerId);
+                e.preventDefault();
+            });
+            head.addEventListener('pointermove', (e) => {
+                if (!vDrag) return;
+                const nx = Math.min(Math.max(-40, vBX + e.clientX - vSX), window.innerWidth - 80);
+                const ny = Math.min(Math.max(0, vBY + e.clientY - vSY), window.innerHeight - 60);
+                box.style.left = nx + 'px';
+                box.style.top = ny + 'px';
+            });
+            const vStop = () => { vDrag = false; };
+            head.addEventListener('pointerup', vStop);
+            head.addEventListener('pointercancel', vStop);
             v.addEventListener('click', (e) => { if (e.target === v) hide(); });
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && v.style.display !== 'none') hide();
@@ -768,7 +794,16 @@
         }
         el('cc_viewer_title').textContent = title + ' — v' + VERSION;
         el('cc_viewer_pre').textContent = 'Continuity Copilot v' + VERSION + ' — close with \u2715, the Close button, tapping outside the box, or Esc.\n\n' + text;
-        v.style.display = 'flex';
+        const bx = v._box;
+        if (bx) {
+            bx.style.left = '3vw';
+            bx.style.right = '3vw';
+            bx.style.top = '70px';
+            bx.style.bottom = '16px';
+            bx.style.width = 'auto';
+            bx.style.height = 'auto';
+        }
+        v.style.display = 'block';
     }
 
     function memoryReport() {
