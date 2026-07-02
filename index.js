@@ -17,6 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
+    const VERSION = '0.5.2';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -747,7 +748,14 @@
             v.appendChild(box);
             document.body.appendChild(v);
 
+            const xBtn = document.createElement('button');
+            xBtn.textContent = '\u2715';
+            xBtn.setAttribute('aria-label', 'Close');
+            xBtn.style.cssText = 'position:absolute;top:10px;right:10px;z-index:2;width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(0,0,0,0.65);color:#fff;font-size:20px;line-height:1;cursor:pointer;';
+            v.appendChild(xBtn);
+
             const hide = () => { v.style.display = 'none'; };
+            xBtn.addEventListener('click', hide);
             closeBtn.addEventListener('click', hide);
             v.addEventListener('click', (e) => { if (e.target === v) hide(); });
             document.addEventListener('keydown', (e) => {
@@ -758,8 +766,8 @@
                 toast(ok ? 'Copied to clipboard.' : 'Copy failed — select the text manually.', ok ? 'success' : 'error');
             });
         }
-        el('cc_viewer_title').textContent = title;
-        el('cc_viewer_pre').textContent = text;
+        el('cc_viewer_title').textContent = title + ' — v' + VERSION;
+        el('cc_viewer_pre').textContent = 'Continuity Copilot v' + VERSION + ' — close with \u2715, the Close button, tapping outside the box, or Esc.\n\n' + text;
         v.style.display = 'flex';
     }
 
@@ -1062,7 +1070,7 @@
         if (!sub) return;
         const c = ctx();
         const count = Array.isArray(c.chat) ? c.chat.length : 0;
-        sub.textContent = count + ' messages';
+        sub.textContent = 'v' + VERSION + ' · ' + count + ' messages';
     }
 
     function togglePanel(force) {
@@ -1165,7 +1173,7 @@
             addMenuButton();
             bindEvents();
             registerSlash();
-            console.log(LOG, 'ready');
+            console.log(LOG, 'ready', 'v' + VERSION);
         } catch (e) {
             console.error(LOG, 'init failed', e);
         }
