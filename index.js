@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '1.8.5';
+    const VERSION = '1.8.7';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -790,7 +790,26 @@
         }
     }
 
-    function applyOne(edit) {
+    async function setHiddenState(i, hide) {
+        const c = ctx();
+        const msg = c.chat?.[i];
+        if (!msg) return;
+        if (typeof c.hideChatMessageRange === 'function') {
+            try {
+                await c.hideChatMessageRange(i, i, !hide);
+                msg.is_system = !!hide;
+                return;
+            } catch (e) { /* fall through to manual */ }
+        }
+        msg.is_system = !!hide;
+        try {
+            const elm = document.querySelector('#chat .mes[mesid="' + i + '"]');
+            if (elm) elm.setAttribute('is_system', String(!!hide));
+        } catch (e) { /* ignore */ }
+        refreshMessage(i);
+    }
+
+    async function applyOne(edit) {
         const c = ctx();
         const i = Number(edit.id);
         const msg = c.chat?.[i];
@@ -801,13 +820,12 @@
             if (!edit.hide && ghostedSet().has(i)) {
                 return { ok: false, reason: 'ghosted by Summaryception \u2014 restore it via Summaryception instead' };
             }
-            msg.is_system = !!edit.hide;
+            await setHiddenState(i, !!edit.hide);
             const led = metaRoot().ccHidden;
             const pos = led.indexOf(i);
             if (edit.hide && pos < 0) led.push(i);
             if (!edit.hide && pos >= 0) led.splice(pos, 1);
             saveMeta();
-            refreshMessage(i);
             return { ok: true, before: String(msg.mes || ''), beforeSys };
         }
         if (msg.is_user && !settings.allowUserEdits) {
@@ -952,7 +970,7 @@
                     edit.status = 'failed: ' + res.reason;
                 }
             } else {
-                const res = applyOne(edit);
+                const res = await applyOne(edit);
                 if (res.ok) {
                     edit.status = 'applied' + (res.fuzzyNote || '');
                     chatApplied.push({ kind: 'chat', id: edit.id, before: res.before, beforeSys: res.beforeSys });
@@ -994,7 +1012,7 @@
             if (!msg) continue;
             msg.mes = item.before;
             if (typeof item.beforeSys === 'boolean') {
-                msg.is_system = item.beforeSys;
+                await setHiddenState(item.id, item.beforeSys);
                 const led = metaRoot().ccHidden;
                 const pos = led.indexOf(item.id);
                 if (item.beforeSys && pos < 0) led.push(item.id);
@@ -2179,8 +2197,7 @@
             for (const id of led) {
                 const msg = chat[id];
                 if (msg && !msg.is_system) {
-                    msg.is_system = true;
-                    refreshMessage(id);
+                    await setHiddenState(id, true);
                     n++;
                 }
             }
@@ -2208,6 +2225,7 @@
             });
             c.eventSource?.on?.(c.event_types?.MESSAGE_RECEIVED, async (i) => {
                 try {
+                    reconcileHidden();
                     const d = metaRoot().director;
                     if (!d || d.concluded) return;
                     const msg = ctx().chat?.[Number(i)];
@@ -2225,6 +2243,9 @@
                     pushHistory('note', note);
                 } catch (e2) { /* ignore */ }
             });
+            if (c.event_types?.GENERATION_STARTED) {
+                c.eventSource.on(c.event_types.GENERATION_STARTED, () => { reconcileHidden(); });
+            }
         } catch (e) { /* ignore */ }
     }
 
