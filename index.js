@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '0.8.1';
+    const VERSION = '0.9.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -848,9 +848,9 @@
             return;
         }
         const expanded = expandShortcut(userText);
-        addBubble('user', userText);
-        if (expanded !== userText) addBubble('note', 'shortcut expanded');
         pushHistory('user', expanded);
+        addBubble('user', userText, meta().history.length - 1);
+        if (expanded !== userText) addBubble('note', 'shortcut expanded');
 
         await runGeneration();
     }
@@ -939,6 +939,22 @@
         pendingEdits = [];
         renderHistory();
         renderEditCards();
+    }
+
+    function startEditUserMessage(idx) {
+        if (running) return;
+        const h = meta().history;
+        if (!h[idx] || h[idx].role !== 'user') return;
+        if (idx < h.length - 1 && !confirm('Edit this message? Everything after it in this session will be removed.')) return;
+        const text = h[idx].content;
+        h.splice(idx);
+        saveMeta();
+        pendingEdits = [];
+        renderHistory();
+        renderEditCards();
+        const input = el('cc_input');
+        if (input) { input.value = text; input.focus(); }
+        addBubble('note', 'Editing \u2014 press Send to continue from here.');
     }
 
     // ------------------------------------------------------------------
@@ -1280,12 +1296,20 @@
         if (rt) rt.disabled = b;
     }
 
-    function addBubble(kind, text) {
+    function addBubble(kind, text, hidx) {
         const log = el('cc_log');
         const div = document.createElement('div');
         const cls = kind === 'user' ? 'cc_user' : kind === 'assistant' || kind === 'ai' ? 'cc_ai' : kind === 'busy' ? 'cc_busy' : 'cc_note';
         div.className = 'cc_bubble ' + cls;
         div.innerHTML = esc(text);
+        if (kind === 'user' && Number.isInteger(hidx)) {
+            const pen = document.createElement('span');
+            pen.textContent = '\u270E';
+            pen.title = 'Edit this message and continue from here';
+            pen.style.cssText = 'margin-left:8px;cursor:pointer;opacity:0.6;font-size:0.95em;';
+            pen.addEventListener('click', () => startEditUserMessage(hidx));
+            div.appendChild(pen);
+        }
         log.appendChild(div);
         log.scrollTop = log.scrollHeight;
         return div;
@@ -1310,9 +1334,11 @@
         const log = el('cc_log');
         if (!log) return;
         log.innerHTML = '';
-        for (const h of meta().history) {
+        const hist = meta().history;
+        for (let i = 0; i < hist.length; i++) {
+            const h = hist[i];
             if (h.role === 'assistant') addAiBubble(h.content, h.think);
-            else if (h.role === 'user') addBubble('user', h.content);
+            else if (h.role === 'user') addBubble('user', h.content, i);
             else addBubble('note', h.content);
         }
         updateSub();
