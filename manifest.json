@@ -1,0 +1,12 @@
+{
+    "display_name": "Continuity Copilot",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "brucestarkallen",
+    "version": "1.3.2",
+    "homePage": "",
+    "auto_update": false
+}

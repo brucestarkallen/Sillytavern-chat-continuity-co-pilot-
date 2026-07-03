@@ -1,0 +1,402 @@
+/* Continuity Copilot — panel styled with SillyTavern theme variables */
+
+#cc_panel {
+    position: fixed;
+    top: 60px;
+    right: 12px;
+    width: 400px;
+    height: 62vh;
+    min-width: 300px;
+    min-height: 260px;
+    max-width: 96vw;
+    max-height: 92vh;
+    display: none;
+    flex-direction: column;
+    z-index: 3000;
+    resize: both;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    background-color: var(--SmartThemeBlurTintColor, rgba(23, 23, 23, 0.95));
+    color: var(--SmartThemeBodyColor, #dcdcdc);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(calc(var(--blurStrength, 10) * 1px));
+    font-size: 0.95em;
+}
+
+#cc_panel.cc_open {
+    display: flex;
+}
+
+#cc_header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: move;
+    user-select: none;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    flex: 0 0 auto;
+}
+
+#cc_header .cc_title {
+    font-weight: 600;
+    flex: 0 0 auto;
+}
+
+#cc_header .cc_sub {
+    opacity: 0.65;
+    font-size: 0.85em;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#cc_header .cc_hbtn {
+    cursor: pointer;
+    opacity: 0.75;
+    padding: 2px 6px;
+    flex: 0 0 auto;
+}
+
+#cc_header .cc_hbtn:hover {
+    opacity: 1;
+}
+
+/* Settings drawer */
+#cc_settings {
+    display: none;
+    flex: 0 0 auto;
+    max-height: 45%;
+    overflow-y: auto;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+}
+
+#cc_settings.cc_open {
+    display: block;
+}
+
+#cc_settings label {
+    display: block;
+    margin: 6px 0 2px;
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
+#cc_settings input[type="text"],
+#cc_settings input[type="number"],
+#cc_settings select,
+#cc_settings textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background-color: rgba(0, 0, 0, 0.25);
+    color: inherit;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    border-radius: 5px;
+    padding: 4px 6px;
+    font-size: 0.9em;
+}
+
+#cc_settings textarea {
+    min-height: 90px;
+    resize: vertical;
+    font-family: monospace;
+}
+
+#cc_settings .cc_row {
+    display: flex;
+    gap: 8px;
+}
+
+#cc_settings .cc_row > div {
+    flex: 1 1 0;
+}
+
+#cc_settings .cc_check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 0.9em;
+}
+
+/* Chat log */
+#cc_log {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.cc_bubble {
+    max-width: 92%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.35;
+}
+
+.cc_bubble.cc_user {
+    align-self: flex-end;
+    background-color: rgba(255, 255, 255, 0.10);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+}
+
+.cc_bubble.cc_ai {
+    align-self: flex-start;
+    background-color: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+}
+
+.cc_bubble.cc_note {
+    align-self: center;
+    font-size: 0.8em;
+    font-style: italic;
+    opacity: 0.7;
+    background: none;
+    border: none;
+    text-align: center;
+    padding: 0 6px;
+}
+
+.cc_bubble.cc_busy {
+    align-self: flex-start;
+    opacity: 0.7;
+    font-style: italic;
+}
+
+/* Proposed edit cards */
+#cc_edits {
+    flex: 0 0 auto;
+    max-height: 40%;
+    overflow-y: auto;
+    padding: 6px 10px;
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    display: none;
+}
+
+#cc_edits.cc_open {
+    display: block;
+}
+
+#cc_edits .cc_edits_head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 0.85em;
+}
+
+#cc_edits .cc_edits_head span {
+    flex: 1 1 auto;
+    opacity: 0.8;
+}
+
+.cc_card {
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    border-radius: 8px;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    font-size: 0.85em;
+}
+
+.cc_card .cc_card_top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.cc_card .cc_card_top b {
+    color: var(--SmartThemeQuoteColor, #7dd3a8);
+}
+
+.cc_card .cc_card_top span {
+    flex: 1 1 auto;
+    opacity: 0.75;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cc_diff {
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-radius: 5px;
+    padding: 4px 6px;
+    margin: 3px 0;
+    font-family: monospace;
+    font-size: 0.92em;
+}
+
+.cc_diff.cc_before {
+    background-color: rgba(200, 60, 60, 0.12);
+    border-left: 3px solid rgba(220, 90, 90, 0.8);
+}
+
+.cc_diff.cc_after {
+    background-color: rgba(60, 180, 100, 0.12);
+    border-left: 3px solid rgba(80, 200, 120, 0.8);
+}
+
+.cc_card .cc_card_status {
+    font-style: italic;
+    opacity: 0.75;
+    margin-top: 2px;
+}
+
+/* Composer */
+#cc_composer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    padding: 6px 10px 8px;
+}
+
+#cc_quick {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.cc_btn {
+    cursor: pointer;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.25));
+    background-color: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 0.85em;
+}
+
+.cc_btn:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.cc_btn.cc_primary {
+    background-color: var(--SmartThemeQuoteColor, #4b7bec);
+    color: #101010;
+    border-color: transparent;
+    font-weight: 600;
+}
+
+.cc_btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+#cc_inputrow {
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+}
+
+#cc_input {
+    flex: 1 1 auto;
+    min-height: 38px;
+    max-height: 140px;
+    resize: vertical;
+    background-color: rgba(0, 0, 0, 0.25);
+    color: inherit;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    border-radius: 6px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    font-size: 0.95em;
+}
+
+/* Wand menu entry */
+#cc_menu_item {
+    cursor: pointer;
+}
+
+@media (max-width: 550px) {
+    #cc_panel {
+        top: auto;
+        bottom: 0;
+        right: 0;
+        left: 0;
+        width: 100vw;
+        max-width: 100vw;
+        height: 72vh;
+        border-radius: 10px 10px 0 0;
+        resize: none;
+    }
+}
+
+/* Collapsible thinking block inside AI bubbles */
+.cc_think {
+    font-size: 0.82em;
+    opacity: 0.8;
+    margin-bottom: 5px;
+}
+
+.cc_think summary {
+    cursor: pointer;
+    font-style: italic;
+    opacity: 0.85;
+}
+
+.cc_think div {
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-left: 2px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.25));
+    padding-left: 6px;
+    margin-top: 3px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+/* Fullscreen viewer for Memory? / Context */
+#cc_viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 3500;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#cc_viewer_box {
+    width: min(860px, 94vw);
+    height: 86vh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 10px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    background-color: var(--SmartThemeBlurTintColor, rgba(23, 23, 23, 0.97));
+    color: var(--SmartThemeBodyColor, #dcdcdc);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+#cc_viewer_head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+}
+
+#cc_viewer_head span {
+    flex: 1 1 auto;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#cc_viewer_pre {
+    flex: 1 1 auto;
+    overflow: auto;
+    margin: 0;
+    padding: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.85em;
+}
