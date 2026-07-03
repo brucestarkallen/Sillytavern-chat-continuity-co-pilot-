@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '1.5.1';
+    const VERSION = '1.6.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -247,6 +247,23 @@
         renderHistory();
         renderEditCards();
         addBubble('note', 'Branched from "' + cur.name + '" \u2014 this copy is independent of the original.');
+    }
+
+    function branchAt(idx) {
+        const m = metaRoot();
+        const cur = meta();
+        if (!cur.history[idx]) return;
+        const id = Math.max(0, ...m.sessions.map(x => x.id)) + 1;
+        const name = (cur.name + ' @' + (idx + 1)).slice(0, 40);
+        m.sessions.push({ id, name, history: JSON.parse(JSON.stringify(cur.history.slice(0, idx + 1))) });
+        m.activeId = id;
+        saveMeta();
+        pendingEdits = [];
+        undoStack = [];
+        renderSessions();
+        renderHistory();
+        renderEditCards();
+        addBubble('note', 'Branched at message ' + (idx + 1) + ' from "' + cur.name + '".');
     }
 
     function renameSession() {
@@ -912,9 +929,10 @@
     // Send flow (with <fetch> tool loop)
     // ------------------------------------------------------------------
 
-    function historyForLLM() {
+    function historyForLLM(uptoIdx) {
         const depth = Math.max(2, Number(settings.historyDepth) || 12);
-        return meta().history
+        const base = Number.isInteger(uptoIdx) ? meta().history.slice(0, uptoIdx) : meta().history;
+        return base
             .slice(-depth)
             .map(h => h.role === 'note'
                 ? { role: 'user', content: '[STATE] ' + h.content }
@@ -956,10 +974,11 @@
         await runGeneration();
     }
 
-    async function runGeneration() {
+    async function runGeneration(opts = {}) {
         if (running) return;
         running = true;
         setBusy(true);
+        const sessAtStart = metaRoot().activeId;
         const busy = addBubble('busy', 'thinking…');
         const live = (acc, reasoning) => {
             const log = el('cc_log');
@@ -974,7 +993,7 @@
             const messages = [
                 { role: 'system', content: sysPrompt() },
                 { role: 'system', content: buildContextBlock() },
-                ...historyForLLM(),
+                ...historyForLLM(Number.isInteger(opts.swipeIdx) ? opts.swipeIdx : undefined),
             ];
 
             let reply = '';
@@ -987,18 +1006,36 @@
                 think = split.think;
                 if (stopRequested) {
                     addBubble('note', 'Generation stopped \u2014 partial reply kept.');
+                    pushHistory('note', 'Generation stopped \u2014 partial reply kept.');
                     break;
                 }
                 const ids = parseFetch(reply);
                 if (!ids || round === rounds) break;
                 addBubble('note', 'Copilot read full text of #' + ids.join(', #'));
+                pushHistory('note', 'Copilot read full text of #' + ids.join(', #'));
                 messages.push({ role: 'assistant', content: reply });
                 messages.push({ role: 'user', content: '[FETCHED MESSAGES]\n' + fullTextOf(ids) });
             }
 
             busy.remove();
-            pushHistory('assistant', reply, think);
-            addAiBubble(reply, think, meta().history.length - 1);
+            if (Number.isInteger(opts.swipeIdx)) {
+                if (metaRoot().activeId !== sessAtStart) {
+                    addBubble('note', 'Swipe result discarded \u2014 session changed during generation.');
+                    return;
+                }
+                const entry = meta().history[opts.swipeIdx];
+                if (entry && entry.role === 'assistant') {
+                    ensureSwipes(entry);
+                    entry.swipes.push({ content: reply, think: think || '' });
+                    entry.swipeId = entry.swipes.length - 1;
+                    entry.content = reply;
+                    entry.think = think || '';
+                    saveMeta();
+                }
+            } else {
+                pushHistory('assistant', reply, think);
+            }
+            renderHistory();
 
             const parsed = parseEdits(reply);
             const parsedMem = parseMemEdits(reply);
@@ -1020,12 +1057,46 @@
         }
     }
 
+    function ensureSwipes(entry) {
+        if (!Array.isArray(entry.swipes) || !entry.swipes.length) {
+            entry.swipes = [{ content: entry.content, think: entry.think || '' }];
+            entry.swipeId = 0;
+        }
+        if (!Number.isInteger(entry.swipeId) || entry.swipeId < 0 || entry.swipeId >= entry.swipes.length) {
+            entry.swipeId = entry.swipes.length - 1;
+        }
+    }
+
+    async function swipeAssistant(idx, dir) {
+        if (running) return;
+        const h = meta().history;
+        const entry = h[idx];
+        if (!entry || entry.role !== 'assistant' || idx !== h.length - 1) return;
+        ensureSwipes(entry);
+        const target = entry.swipeId + dir;
+        if (target < 0) return;
+        if (target < entry.swipes.length) {
+            entry.swipeId = target;
+            entry.content = entry.swipes[target].content;
+            entry.think = entry.swipes[target].think || '';
+            saveMeta();
+            renderHistory();
+            const pe = parseEdits(entry.content);
+            const pm = parseMemEdits(entry.content);
+            pendingEdits = [...pe.edits, ...pm.edits];
+            renderEditCards();
+            return;
+        }
+        await runGeneration({ swipeIdx: idx });
+    }
+
     async function retryLast() {
         if (running) return;
         const h = meta().history;
         let i = h.length - 1;
         while (i >= 0 && h[i].role !== 'assistant') i--;
         if (i < 0) { toast('Nothing to retry yet.', 'warning'); return; }
+        if (i === h.length - 1) { await swipeAssistant(i, +1); return; }
         h.splice(i);
         saveMeta();
         pendingEdits = [];
@@ -1611,20 +1682,24 @@
 
     function attachMsgIcons(div, kind, hidx) {
         if (!Number.isInteger(hidx)) return;
+        const mk = (txt, title, fn, op) => {
+            const sp = document.createElement('span');
+            sp.textContent = txt;
+            sp.title = title;
+            sp.style.cssText = 'margin-left:8px;cursor:pointer;opacity:' + (op || '0.55') + ';font-size:0.9em;';
+            sp.addEventListener('click', fn);
+            div.appendChild(sp);
+        };
         if (kind === 'user') {
-            const pen = document.createElement('span');
-            pen.textContent = '\u270E';
-            pen.title = 'Edit this message and continue from here';
-            pen.style.cssText = 'margin-left:8px;cursor:pointer;opacity:0.6;font-size:0.95em;';
-            pen.addEventListener('click', () => startEditUserMessage(hidx));
-            div.appendChild(pen);
+            mk('\u270E', 'Edit this message and continue from here', () => startEditUserMessage(hidx), '0.6');
         }
-        const bin = document.createElement('span');
-        bin.textContent = '\u2715';
-        bin.title = 'Delete this message';
-        bin.style.cssText = 'margin-left:8px;cursor:pointer;opacity:0.5;font-size:0.9em;';
-        bin.addEventListener('click', () => deleteMessageAt(hidx));
-        div.appendChild(bin);
+        mk('\uD83D\uDCCB', 'Copy message text', async () => {
+            const h = meta().history[hidx];
+            const ok = await copyText(String(h?.content ?? ''));
+            toast(ok ? 'Copied.' : 'Copy failed.', ok ? 'success' : 'error');
+        });
+        mk('\uD83C\uDF3F', 'Branch: new session starting from this message', () => branchAt(hidx));
+        mk('\u2715', 'Delete this message', () => deleteMessageAt(hidx), '0.5');
     }
 
     function addBubble(kind, text, hidx) {
@@ -1662,11 +1737,38 @@
         if (!log) return;
         log.innerHTML = '';
         const hist = meta().history;
+        let lastDiv = null;
+        let lastIdx = -1;
         for (let i = 0; i < hist.length; i++) {
             const h = hist[i];
-            if (h.role === 'assistant') addAiBubble(h.content, h.think, i);
+            if (h.role === 'assistant') {
+                lastDiv = addAiBubble(h.content, h.think, i);
+                lastIdx = i;
+            }
             else if (h.role === 'user') addBubble('user', h.content, i);
             else addBubble('note', h.content, i);
+        }
+        if (lastDiv && lastIdx === hist.length - 1) {
+            const entry = hist[lastIdx];
+            const total = Array.isArray(entry.swipes) && entry.swipes.length ? entry.swipes.length : 1;
+            const cur = (Number.isInteger(entry.swipeId) ? entry.swipeId : total - 1) + 1;
+            const bar = document.createElement('div');
+            bar.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px;opacity:0.75;user-select:none;';
+            const mkArrow = (txt, dir, title) => {
+                const b = document.createElement('span');
+                b.textContent = txt;
+                b.title = title;
+                b.style.cssText = 'cursor:pointer;padding:0 10px;font-size:1.25em;';
+                b.addEventListener('click', () => swipeAssistant(lastIdx, dir));
+                return b;
+            };
+            bar.appendChild(mkArrow('\u2039', -1, 'Previous answer'));
+            const cnt = document.createElement('span');
+            cnt.textContent = cur + ' / ' + total;
+            cnt.style.cssText = 'font-size:0.85em;';
+            bar.appendChild(cnt);
+            bar.appendChild(mkArrow('\u203A', 1, 'Next answer / generate new alternative'));
+            lastDiv.appendChild(bar);
         }
         log.scrollTop = log.scrollHeight;
         updateSub();
