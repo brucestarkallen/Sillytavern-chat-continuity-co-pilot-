@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '1.9.3';
+    const VERSION = '1.9.4';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -1449,7 +1449,7 @@
         const busyNote = addBubble('busy', mode === 'next' ? 'directing the next episode\u2026' : 'directing\u2026');
         try {
             const prev = metaRoot().director;
-            const user = buildContextBlock()
+            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '')
                 + (mode === 'next' && prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded]\n' + prev.text : '')
                 + '\n\nWrite the director\'s note now.';
             const raw = await callLLM([
@@ -1498,7 +1498,7 @@
         const busyNote = addBubble('busy', 'revising the directive\u2026');
         try {
             const prev = metaRoot().director;
-            const user = buildContextBlock()
+            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '')
                 + (prev?.text ? '\n\n[CURRENT DIRECTIVE]\n' + prev.text : '')
                 + '\n\n[PLAYER\'S DIRECTION INSTRUCTION]\n' + instruction
                 + '\n\nWrite the revised director\'s note now. Output ONLY the note text.';
@@ -1539,8 +1539,8 @@
         setBusy(true);
         const busyNote = addBubble('busy', 'checking episode progress\u2026');
         try {
-            const sys = 'You are checking secret episode progress for a roleplay director. You receive the SECRET DIRECTIVE and the story context. Judge whether the episode\'s LANDING has been reached. Reply with EXACTLY one line, spoiler-free, in one of these formats: "ONGOING \u2014 <short vague progress hint, no spoilers>" or "CONCLUDED \u2014 <short line>" or "DERAILED \u2014 <short line>". Never quote or reveal the directive contents.';
-            const user = buildContextBlock() + '\n\n[SECRET DIRECTIVE]\n' + d.text + '\n\nJudge the progress now.';
+            const sys = 'You are checking secret episode progress for a roleplay director. You receive the SECRET DIRECTIVE and the story context. Judge whether the episode\'s LANDING has been reached based only on actual narrated story events; ignore any literal [EPISODE_END] marker text. Reply with EXACTLY one line, spoiler-free, in one of these formats: "ONGOING \u2014 <short vague progress hint, no spoilers>" or "CONCLUDED \u2014 <short line>" or "DERAILED \u2014 <short line>". Never quote or reveal the directive contents.';
+            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '') + '\n\n[SECRET DIRECTIVE]\n' + d.text + '\n\nJudge the progress now.';
             const raw = await callLLM([
                 { role: 'system', content: sys },
                 { role: 'user', content: user },
@@ -2280,6 +2280,38 @@
         } catch (e) { console.warn(LOG, 'reconcile failed', e); }
     }
 
+    function scrubEpisodeMarkers() {
+        try {
+            const c = ctx();
+            const chat = c.chat;
+            if (!Array.isArray(chat)) return;
+            let n = 0;
+            const clean = (t) => String(t).replace(/\s*\[EPISODE_END\]\s*/g, ' ').trim();
+            for (let i = 0; i < chat.length; i++) {
+                const m = chat[i];
+                if (!m) continue;
+                let touched = false;
+                if (typeof m.mes === 'string' && m.mes.includes('[EPISODE_END]')) {
+                    m.mes = clean(m.mes);
+                    touched = true;
+                }
+                if (Array.isArray(m.swipes)) {
+                    for (let k = 0; k < m.swipes.length; k++) {
+                        if (typeof m.swipes[k] === 'string' && m.swipes[k].includes('[EPISODE_END]')) {
+                            m.swipes[k] = clean(m.swipes[k]);
+                            touched = true;
+                        }
+                    }
+                }
+                if (touched) { refreshMessage(i); n++; }
+            }
+            if (n) {
+                try { c.saveChat?.(); } catch (e) { /* ignore */ }
+                console.log(LOG, 'scrubbed EPISODE_END from', n, 'message(s)');
+            }
+        } catch (e) { /* ignore */ }
+    }
+
     function bindEvents() {
         const c = ctx();
         try {
@@ -2292,20 +2324,21 @@
                     renderEditCards();
                 }
                 reconcileHidden();
+                scrubEpisodeMarkers();
                 applyInjections();
                 updateSub();
             });
             c.eventSource?.on?.(c.event_types?.MESSAGE_RECEIVED, async (i) => {
                 try {
                     reconcileHidden();
-                    const d = metaRoot().director;
-                    if (!d || d.concluded) return;
                     const msg = ctx().chat?.[Number(i)];
                     if (!msg || msg.is_user || typeof msg.mes !== 'string') return;
                     if (!msg.mes.includes('[EPISODE_END]')) return;
                     msg.mes = msg.mes.replace(/\s*\[EPISODE_END\]\s*$/, '').replace(/\[EPISODE_END\]/g, '').trim();
                     refreshMessage(Number(i));
                     try { await ctx().saveChat?.(); } catch (e2) { /* ignore */ }
+                    const d = metaRoot().director;
+                    if (!d || d.concluded) return;
                     d.concluded = true;
                     saveMeta();
                     updateSub();
