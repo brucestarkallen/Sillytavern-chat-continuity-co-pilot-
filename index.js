@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '0.5.5';
+    const VERSION = '0.7.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -128,14 +128,24 @@
         try { ctx().saveSettingsDebounced?.(); } catch (e) { /* ignore */ }
     }
 
-    function meta() {
+    function metaRoot() {
         const c = ctx();
         const md = c.chatMetadata || c.chat_metadata;
-        if (!md) return { history: [] };
-        if (!md[MODULE] || !Array.isArray(md[MODULE].history)) {
-            md[MODULE] = { history: [] };
+        if (!md) return { sessions: [{ id: 1, name: 'Session 1', history: [] }], activeId: 1 };
+        let m = md[MODULE];
+        if (!m || !Array.isArray(m.sessions)) {
+            const old = (m && Array.isArray(m.history)) ? m.history : [];
+            m = { sessions: [{ id: 1, name: 'Session 1', history: old }], activeId: 1 };
+            md[MODULE] = m;
         }
-        return md[MODULE];
+        if (!m.sessions.length) m.sessions.push({ id: 1, name: 'Session 1', history: [] });
+        if (!m.sessions.some(x => x.id === m.activeId)) m.activeId = m.sessions[0].id;
+        return m;
+    }
+
+    function meta() {
+        const m = metaRoot();
+        return m.sessions.find(x => x.id === m.activeId);
     }
 
     function saveMeta() {
@@ -153,6 +163,75 @@
         m.history.push(entry);
         if (m.history.length > 80) m.history.splice(0, m.history.length - 80);
         saveMeta();
+    }
+
+    function renderSessions() {
+        const sel = el('cc_sess');
+        if (!sel) return;
+        const m = metaRoot();
+        sel.innerHTML = '';
+        for (const x of m.sessions) {
+            const o = document.createElement('option');
+            o.value = String(x.id);
+            o.textContent = x.name;
+            sel.appendChild(o);
+        }
+        sel.value = String(m.activeId);
+    }
+
+    function switchSession(id) {
+        const m = metaRoot();
+        m.activeId = Number(id);
+        saveMeta();
+        pendingEdits = [];
+        undoStack = [];
+        renderSessions();
+        renderHistory();
+        renderEditCards();
+    }
+
+    function newSession() {
+        const m = metaRoot();
+        const id = Math.max(0, ...m.sessions.map(x => x.id)) + 1;
+        m.sessions.push({ id, name: 'Session ' + id, history: [] });
+        m.activeId = id;
+        saveMeta();
+        pendingEdits = [];
+        undoStack = [];
+        renderSessions();
+        renderHistory();
+        renderEditCards();
+    }
+
+    function renameSession() {
+        const sess = meta();
+        const n = prompt('Session name:', sess.name);
+        if (n && n.trim()) {
+            sess.name = n.trim().slice(0, 40);
+            saveMeta();
+            renderSessions();
+        }
+    }
+
+    function deleteSession() {
+        const m = metaRoot();
+        if (m.sessions.length <= 1) {
+            if (!confirm('Only one session exists \u2014 clear its conversation?')) return;
+            meta().history = [];
+            saveMeta();
+            renderHistory();
+            renderEditCards();
+            return;
+        }
+        if (!confirm('Delete session "' + meta().name + '" and its conversation?')) return;
+        m.sessions = m.sessions.filter(x => x.id !== m.activeId);
+        m.activeId = m.sessions[0].id;
+        saveMeta();
+        pendingEdits = [];
+        undoStack = [];
+        renderSessions();
+        renderHistory();
+        renderEditCards();
     }
 
     // ------------------------------------------------------------------
@@ -633,13 +712,18 @@
             toast('No chat is loaded.', 'warning');
             return;
         }
-        running = true;
-        setBusy(true);
         const expanded = expandShortcut(userText);
         addBubble('user', userText);
         if (expanded !== userText) addBubble('note', 'shortcut expanded');
         pushHistory('user', expanded);
 
+        await runGeneration();
+    }
+
+    async function runGeneration() {
+        if (running) return;
+        running = true;
+        setBusy(true);
         const busy = addBubble('busy', 'thinking…');
         const live = (acc, reasoning) => {
             const head = (settings.showThinking && reasoning) ? '[thinking]\n' + reasoning + '\n\n' : '';
@@ -692,6 +776,33 @@
             running = false;
             setBusy(false);
         }
+    }
+
+    async function retryLast() {
+        if (running) return;
+        const h = meta().history;
+        let i = h.length - 1;
+        while (i >= 0 && h[i].role !== 'assistant') i--;
+        if (i < 0) { toast('Nothing to retry yet.', 'warning'); return; }
+        h.splice(i);
+        saveMeta();
+        pendingEdits = [];
+        renderHistory();
+        renderEditCards();
+        await runGeneration();
+    }
+
+    async function deleteLastExchange() {
+        if (running) return;
+        const h = meta().history;
+        let i = h.length - 1;
+        while (i >= 0 && h[i].role !== 'user') i--;
+        if (i < 0) { toast('Nothing to delete.', 'warning'); return; }
+        h.splice(i);
+        saveMeta();
+        pendingEdits = [];
+        renderHistory();
+        renderEditCards();
     }
 
     // ------------------------------------------------------------------
@@ -852,12 +963,20 @@
             '  <span class="cc_hbtn" id="cc_gear" title="Settings"><i class="fa-solid fa-gear"></i></span>',
             '  <span class="cc_hbtn" id="cc_close" title="Close"><i class="fa-solid fa-xmark"></i></span>',
             '</div>',
+            '<div id="cc_sessbar" style="display:flex;gap:6px;padding:6px 10px;align-items:center;flex:0 0 auto;border-bottom:1px solid rgba(255,255,255,0.15);">',
+            '  <select id="cc_sess" style="flex:1 1 auto;min-width:0;background:rgba(0,0,0,0.25);color:inherit;border:1px solid rgba(255,255,255,0.25);border-radius:5px;padding:4px 6px;font-size:0.85em;"></select>',
+            '  <button class="cc_btn" id="cc_sessnew" title="New session (fresh context for a new problem)">+ New</button>',
+            '  <button class="cc_btn" id="cc_sessren" title="Rename this session">Ren</button>',
+            '  <button class="cc_btn" id="cc_sessdel" title="Delete this session">Del</button>',
+            '</div>',
             '<div id="cc_settings"></div>',
             '<div id="cc_log"></div>',
             '<div id="cc_edits"></div>',
             '<div id="cc_composer">',
             '  <div id="cc_quick">',
             '    <button class="cc_btn" id="cc_audit" title="Full continuity audit">Audit chat</button>',
+            '    <button class="cc_btn" id="cc_retry" title="Regenerate the last copilot reply">Retry</button>',
+            '    <button class="cc_btn" id="cc_dellast" title="Delete the last question + answer">Del last</button>',
             '    <button class="cc_btn" id="cc_undo" title="Undo last applied batch">Undo</button>',
             '    <button class="cc_btn" id="cc_memcheck" title="Show detected memory sources">Memory?</button>',
             '    <button class="cc_btn" id="cc_context" title="Show the full context the copilot receives">Context</button>',
@@ -891,6 +1010,12 @@
             }
         });
         el('cc_audit').addEventListener('click', () => send(AUDIT_PROMPT));
+        el('cc_retry').addEventListener('click', () => retryLast());
+        el('cc_dellast').addEventListener('click', () => deleteLastExchange());
+        el('cc_sess').addEventListener('change', () => switchSession(el('cc_sess').value));
+        el('cc_sessnew').addEventListener('click', () => newSession());
+        el('cc_sessren').addEventListener('click', () => renameSession());
+        el('cc_sessdel').addEventListener('click', () => deleteSession());
         el('cc_undo').addEventListener('click', () => undoLast());
         el('cc_clear').addEventListener('click', () => {
             if (!confirm('Clear the copilot conversation for this chat?')) return;
@@ -935,6 +1060,7 @@
             '<div style="margin-top:6px; display:flex; gap:6px;">',
             '  <button class="cc_btn" id="cc_saveset">Save settings</button>',
             '  <button class="cc_btn" id="cc_resetprompt">Reset prompt</button>',
+            '  <button class="cc_btn" id="cc_dumpsc">Raw memory data</button>',
             '</div>',
         ].join('\n');
 
@@ -970,6 +1096,20 @@
         el('cc_resetprompt').addEventListener('click', () => {
             el('cc_sysprompt').value = DEFAULT_SYSTEM_PROMPT;
         });
+        el('cc_dumpsc').addEventListener('click', () => {
+            const c = ctx();
+            const md = c.chatMetadata || c.chat_metadata || {};
+            let re;
+            try { re = new RegExp(settings.memoryKeyPattern, 'i'); }
+            catch (e) { re = /summar|ception|memory/i; }
+            const out = {};
+            for (const [k, v2] of Object.entries(md)) {
+                if (k !== MODULE && re.test(k)) out[k] = v2;
+            }
+            let txt;
+            try { txt = JSON.stringify(out, null, 2); } catch (e) { txt = 'Could not serialize: ' + e.message; }
+            showViewer('Raw memory data \u2014 Copy and paste this to Claude', txt);
+        });
     }
 
     function refreshProfileSelect() {
@@ -995,6 +1135,8 @@
         if (btn) btn.disabled = b;
         const au = el('cc_audit');
         if (au) au.disabled = b;
+        const rt = el('cc_retry');
+        if (rt) rt.disabled = b;
     }
 
     function addBubble(kind, text) {
@@ -1109,6 +1251,7 @@
         const open = typeof force === 'boolean' ? force : !panel.classList.contains('cc_open');
         panel.classList.toggle('cc_open', open);
         if (open) {
+            renderSessions();
             renderHistory();
             renderEditCards();
         }
@@ -1182,6 +1325,7 @@
                 pendingEdits = [];
                 undoStack = [];
                 if (el('cc_panel')?.classList.contains('cc_open')) {
+                    renderSessions();
                     renderHistory();
                     renderEditCards();
                 }
