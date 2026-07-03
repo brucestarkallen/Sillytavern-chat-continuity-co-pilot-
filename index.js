@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '0.5.3';
+    const VERSION = '0.5.4';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -712,98 +712,73 @@
     }
 
     function showViewer(title, text) {
-        let v = el('cc_viewer');
-        if (!v) {
-            v = document.createElement('div');
-            v.id = 'cc_viewer';
-            v.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;display:none;background:rgba(0,0,0,0.6);';
+        let backdrop = el('cc_viewer');
+        let box = el('cc_viewer_win');
+        if (!box) {
+            backdrop = document.createElement('div');
+            backdrop.id = 'cc_viewer';
+            backdrop.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9998;display:none;background:rgba(0,0,0,0.5);';
+            document.body.appendChild(backdrop);
 
-            const box = document.createElement('div');
-            box.style.cssText = 'position:absolute;left:3vw;right:3vw;top:70px;bottom:16px;display:flex;flex-direction:column;border-radius:10px;border:1px solid rgba(255,255,255,0.25);background:#1e1e1e;color:var(--SmartThemeBodyColor,#ddd);box-shadow:0 8px 30px rgba(0,0,0,0.5);overflow:hidden;';
+            box = document.createElement('div');
+            box.id = 'cc_viewer_win';
+            box.style.cssText = 'position:fixed;z-index:9999;display:none;flex-direction:column;border-radius:10px;border:1px solid rgba(255,255,255,0.3);background:#1e1e1e;color:#dddddd;box-shadow:0 8px 30px rgba(0,0,0,0.6);overflow:hidden;';
 
             const head = document.createElement('div');
-            head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.2);flex:0 0 auto;cursor:move;user-select:none;touch-action:none;';
+            head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.2);flex:0 0 auto;cursor:move;user-select:none;touch-action:none;background:rgba(255,255,255,0.05);';
 
             const titleEl = document.createElement('span');
             titleEl.id = 'cc_viewer_title';
             titleEl.style.cssText = 'flex:1 1 auto;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
 
-            const btnStyle = 'cursor:pointer;border:1px solid rgba(255,255,255,0.3);background:rgba(255,255,255,0.08);color:inherit;border-radius:6px;padding:6px 14px;font-size:0.9em;flex:0 0 auto;';
+            const btnStyle = 'cursor:pointer;border:1px solid rgba(255,255,255,0.35);background:rgba(255,255,255,0.10);color:inherit;border-radius:6px;padding:8px 16px;font-size:0.95em;flex:0 0 auto;';
             const copyBtn = document.createElement('button');
             copyBtn.textContent = 'Copy';
+            copyBtn.className = 'cc_hbtn';
             copyBtn.style.cssText = btnStyle;
             const closeBtn = document.createElement('button');
             closeBtn.textContent = 'Close';
-            closeBtn.style.cssText = btnStyle;
+            closeBtn.className = 'cc_hbtn';
+            closeBtn.style.cssText = btnStyle + 'background:rgba(220,90,90,0.3);';
 
             const pre = document.createElement('pre');
             pre.id = 'cc_viewer_pre';
-            pre.style.cssText = 'flex:1 1 auto;overflow:auto;margin:0;padding:10px;white-space:pre-wrap;word-break:break-word;font-size:0.85em;max-width:100%;';
+            pre.style.cssText = 'flex:1 1 auto;overflow:auto;margin:0;padding:10px;white-space:pre-wrap;word-break:break-word;font-size:0.85em;';
 
             head.appendChild(titleEl);
             head.appendChild(copyBtn);
             head.appendChild(closeBtn);
             box.appendChild(head);
             box.appendChild(pre);
-            v.appendChild(box);
-            document.body.appendChild(v);
+            document.body.appendChild(box);
 
-            const xBtn = document.createElement('button');
-            xBtn.textContent = '\u2715';
-            xBtn.setAttribute('aria-label', 'Close');
-            xBtn.style.cssText = 'position:absolute;top:10px;right:10px;z-index:2;width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(0,0,0,0.65);color:#fff;font-size:20px;line-height:1;cursor:pointer;';
-            v.appendChild(xBtn);
-
-            const hide = () => { v.style.display = 'none'; };
-            xBtn.addEventListener('click', hide);
+            const hide = () => { backdrop.style.display = 'none'; box.style.display = 'none'; };
             closeBtn.addEventListener('click', hide);
-            v._box = box;
-
-            let vDrag = false, vSX = 0, vSY = 0, vBX = 0, vBY = 0;
-            head.addEventListener('pointerdown', (e) => {
-                if (e.target === copyBtn || e.target === closeBtn) return;
-                const r = box.getBoundingClientRect();
-                box.style.left = r.left + 'px';
-                box.style.top = r.top + 'px';
-                box.style.width = r.width + 'px';
-                box.style.height = r.height + 'px';
-                box.style.right = 'auto';
-                box.style.bottom = 'auto';
-                vDrag = true; vSX = e.clientX; vSY = e.clientY; vBX = r.left; vBY = r.top;
-                head.setPointerCapture?.(e.pointerId);
-                e.preventDefault();
-            });
-            head.addEventListener('pointermove', (e) => {
-                if (!vDrag) return;
-                const nx = Math.min(Math.max(-40, vBX + e.clientX - vSX), window.innerWidth - 80);
-                const ny = Math.min(Math.max(0, vBY + e.clientY - vSY), window.innerHeight - 60);
-                box.style.left = nx + 'px';
-                box.style.top = ny + 'px';
-            });
-            const vStop = () => { vDrag = false; };
-            head.addEventListener('pointerup', vStop);
-            head.addEventListener('pointercancel', vStop);
-            v.addEventListener('click', (e) => { if (e.target === v) hide(); });
+            backdrop.addEventListener('click', hide);
             document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && v.style.display !== 'none') hide();
+                if (e.key === 'Escape' && box.style.display !== 'none') hide();
             });
             copyBtn.addEventListener('click', async () => {
                 const ok = await copyText(pre.textContent);
                 toast(ok ? 'Copied to clipboard.' : 'Copy failed — select the text manually.', ok ? 'success' : 'error');
             });
+
+            // Same drag mechanism as the main panel.
+            makeDraggable(box, head);
         }
-        el('cc_viewer_title').textContent = title + ' — v' + VERSION;
-        el('cc_viewer_pre').textContent = 'Continuity Copilot v' + VERSION + ' — close with \u2715, the Close button, tapping outside the box, or Esc.\n\n' + text;
-        const bx = v._box;
-        if (bx) {
-            bx.style.left = '3vw';
-            bx.style.right = '3vw';
-            bx.style.top = '70px';
-            bx.style.bottom = '16px';
-            bx.style.width = 'auto';
-            bx.style.height = 'auto';
-        }
-        v.style.display = 'block';
+
+        // Snap to a safe on-screen spot and size every time it opens.
+        box.style.left = '3vw';
+        box.style.top = '90px';
+        box.style.right = 'auto';
+        box.style.bottom = 'auto';
+        box.style.width = '94vw';
+        box.style.height = '62vh';
+
+        el('cc_viewer_title').textContent = title + ' \u2014 v' + VERSION;
+        el('cc_viewer_pre').textContent = 'Continuity Copilot v' + VERSION + ' \u2014 drag me by this top bar. Close: the Close button, tapping the dark area, or Esc.\n\n' + text;
+        backdrop.style.display = 'block';
+        box.style.display = 'flex';
     }
 
     function memoryReport() {
