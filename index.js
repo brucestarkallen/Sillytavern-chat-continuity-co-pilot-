@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '1.3.1';
+    const VERSION = '1.3.2';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -70,6 +70,19 @@
         '#s = Check the CURRENT session against [STORY MEMORY]. Use <fetch> to pull any listed messages you have not seen in full. Then find (1) events, facts, or state changes MISSING from the memory and (2) memory entries that are stale or contradicted by the chat. Propose every correction in a single <memedits> block with "find" copied verbatim from [STORY MEMORY]. Do NOT propose <edits> to chat messages unless I explicitly ask.',
         '#f = Check the chat against [STORY MEMORY] and fix every continuity error you find with a single <edits> block.',
         '#i = Brainstorm what could happen next. Give 3-5 distinct directions for the upcoming scene(s), each consistent with [STORY MEMORY] and the current situation: a one-line hook plus what it would develop. Do not write the scene itself and do not propose <edits>.',
+    ].join('\n');
+
+    const DEFAULT_DIRECTOR_PROMPT = [
+        'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
+        'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
+        'The note must contain:',
+        '1. EPISODE PREMISE \u2014 one television-episode-quality premise rising naturally from existing threads.',
+        '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO or WHAT initiates and the pressure it puts on the player character. At least one beat must come from OUTSIDE the personal cast: the crowd/public, an institution or system, the environment, or chance.',
+        '3. NPC & WORLD INITIATIVE \u2014 antagonists, NPCs, and the world itself act first, true to their established methods; the setting should feel alive beyond the main cast.',
+        '4. LANDING \u2014 the natural end state of the episode and its consequence.',
+        'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental).',
+        'Be bold: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
+        'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. Under 250 words. Output ONLY the director\'s note text, no preamble.',
     ].join('\n');
 
     const defaults = {
@@ -975,19 +988,6 @@
     // ------------------------------------------------------------------
     // Director: secret episode directive injected into the storyteller
     // ------------------------------------------------------------------
-
-    const DEFAULT_DIRECTOR_PROMPT = [
-        'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
-        'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
-        'The note must contain:',
-        '1. EPISODE PREMISE \u2014 one television-episode-quality premise rising naturally from existing threads.',
-        '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO or WHAT initiates and the pressure it puts on the player character. At least one beat must come from OUTSIDE the personal cast: the crowd/public, an institution or system, the environment, or chance.',
-        '3. NPC & WORLD INITIATIVE \u2014 antagonists, NPCs, and the world itself act first, true to their established methods; the setting should feel alive beyond the main cast.',
-        '4. LANDING \u2014 the natural end state of the episode and its consequence.',
-        'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental).',
-        'Be bold: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
-        'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. Under 250 words. Output ONLY the director\'s note text, no preamble.',
-    ].join('\n');
 
     const DIRECTOR_KEY = 'cc_director';
 
