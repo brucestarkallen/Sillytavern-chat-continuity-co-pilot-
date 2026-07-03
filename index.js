@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '1.8.2';
+    const VERSION = '1.8.3';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -71,6 +71,7 @@
         '- To HIDE a message from the AI context without deleting it (e.g. OOC/meta exchanges), use {"id": 12, "hide": true, "reason": "..."} inside <edits>. Use {"id": 12, "hide": false} to unhide. Hiding works on user messages too; the text stays visible in the log but leaves the AI context.',
         '- The [MESSAGE INDEX] tags hidden messages "(hidden)" and memory-ghosted ones "(ghosted by memory)". You may unhide "(hidden)" messages when asked; NEVER unhide "(ghosted by memory)" ones \u2014 their content lives in the memory snippets.',
         '- Messages you hid are remembered in a ledger even if another extension later makes them visible again (the index will note this). If the user asks to "re-hide my OOC", emit hide edits for every id in that note.',
+        '- In explanations, refer to blocks WITHOUT angle brackets (write "edits block", "memedits block", "fetch"). The literal tags must appear ONLY wrapping the actual JSON, never inside prose.',
     ].join('\n');
 
     const AUDIT_PROMPT = 'Audit the whole chat against [STORY MEMORY]. Look for continuity and logic errors: wrong locations, wrong character knowledge (information quarantine breaks), timeline contradictions, dropped or duplicated plot state. Fetch full messages if you need them, then list what you found and propose fixes in an <edits> block.';
@@ -559,11 +560,36 @@
     // Reply parsing: <fetch> and <edits>
     // ------------------------------------------------------------------
 
+    function findBlock(text, tag) {
+        const src = String(text || '');
+        const low = src.toLowerCase();
+        const openTag = '<' + tag + '>';
+        const closeTag = '</' + tag + '>';
+        const opens = [];
+        let oi = low.indexOf(openTag);
+        while (oi !== -1) { opens.push(oi); oi = low.indexOf(openTag, oi + 1); }
+        if (!opens.length) return null;
+        let fallback = null;
+        for (let k = opens.length - 1; k >= 0; k--) {
+            const start = opens[k];
+            const innerStart = start + openTag.length;
+            const close = low.indexOf(closeTag, innerStart);
+            if (close === -1) continue;
+            const inner = src.slice(innerStart, close);
+            const cand = { inner, start, end: close + closeTag.length };
+            if (/^\s*(\[|\{|```)/.test(inner)) return cand;
+            if (!fallback) fallback = cand;
+        }
+        return fallback;
+    }
+
     function parseFetch(text) {
-        const m = String(text || '').match(/<fetch>\s*(\[[\s\S]*?\])\s*<\/fetch>/i);
+        const b = findBlock(text, 'fetch');
+        if (!b) return null;
+        const m = b.inner.match(/\[[\s\S]*?\]/);
         if (!m) return null;
         try {
-            const arr = JSON.parse(m[1]);
+            const arr = JSON.parse(m[0]);
             if (!Array.isArray(arr)) return null;
             const ids = arr.map(Number).filter(n => Number.isInteger(n) && n >= 0).slice(0, 15);
             return ids.length ? ids : null;
@@ -571,9 +597,9 @@
     }
 
     function parseEdits(text) {
-        const m = String(text || '').match(/<edits>\s*([\s\S]*?)\s*<\/edits>/i);
-        if (!m) return { edits: [] };
-        let raw = m[1].trim()
+        const b = findBlock(text, 'edits');
+        if (!b) return { edits: [] };
+        let raw = b.inner.trim()
             .replace(/^```(?:json)?\s*/i, '')
             .replace(/```\s*$/, '')
             .trim();
@@ -602,9 +628,9 @@
     }
 
     function parseMemEdits(text) {
-        const m = String(text || '').match(/<memedits>\s*([\s\S]*?)\s*<\/memedits>/i);
-        if (!m) return { edits: [] };
-        let raw = m[1].trim()
+        const b = findBlock(text, 'memedits');
+        if (!b) return { edits: [] };
+        let raw = b.inner.trim()
             .replace(/^```(?:json)?\s*/i, '')
             .replace(/```\s*$/, '')
             .trim();
@@ -626,11 +652,16 @@
     }
 
     function stripBlocks(text) {
-        return String(text || '')
-            .replace(/<fetch>[\s\S]*?<\/fetch>/gi, '')
-            .replace(/<edits>[\s\S]*?<\/edits>/gi, '[proposed edits below]')
-            .replace(/<memedits>[\s\S]*?<\/memedits>/gi, '[proposed memory edits below]')
-            .trim();
+        let out = String(text || '');
+        const cut = (tag, label) => {
+            const b = findBlock(out, tag);
+            if (!b) return;
+            out = out.slice(0, b.start) + (label || '') + out.slice(b.end);
+        };
+        cut('fetch', '');
+        cut('edits', '[proposed edits below]');
+        cut('memedits', '[proposed memory edits below]');
+        return out.trim();
     }
 
     // ------------------------------------------------------------------
