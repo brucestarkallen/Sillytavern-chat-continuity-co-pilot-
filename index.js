@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '1.8.4';
+    const VERSION = '1.8.5';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -237,7 +237,14 @@
     function newSession() {
         const m = metaRoot();
         const id = Math.max(0, ...m.sessions.map(x => x.id)) + 1;
-        m.sessions.push({ id, name: 'Session ' + id, history: [] });
+        const used = new Set();
+        for (const x of m.sessions) {
+            const mm = /^Session (\d+)$/.exec(String(x.name || ''));
+            if (mm) used.add(Number(mm[1]));
+        }
+        let n = 1;
+        while (used.has(n)) n++;
+        m.sessions.push({ id, name: 'Session ' + n, history: [] });
         m.activeId = id;
         saveMeta();
         pendingEdits = [];
