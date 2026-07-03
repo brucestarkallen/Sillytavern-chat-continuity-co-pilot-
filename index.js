@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '0.9.0';
+    const VERSION = '1.2.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -84,6 +84,9 @@
         includeAuthorsNote: true,
         streaming: true,
         showThinking: true,
+        directorIntensity: 'standard',
+        directorAnchors: '',
+        directorDepth: 4,
         shortcuts: DEFAULT_SHORTCUTS,
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
     };
@@ -847,6 +850,17 @@
             toast('No chat is loaded.', 'warning');
             return;
         }
+        const dm = userText.match(/^#d\s+([\s\S]+)$/i);
+        if (dm) {
+            addBubble('user', userText);
+            pushHistory('note', '\uD83C\uDFAC Player direction given: ' + dm[1].trim().slice(0, 300));
+            await directorEdit(dm[1].trim());
+            return;
+        }
+        if (/^#d$/i.test(userText)) {
+            toast('Usage: #d your direction \u2014 e.g. "#d make Silas corner Jovan at the duel field this episode"', 'info');
+            return;
+        }
         const expanded = expandShortcut(userText);
         pushHistory('user', expanded);
         addBubble('user', userText, meta().history.length - 1);
@@ -955,6 +969,172 @@
         const input = el('cc_input');
         if (input) { input.value = text; input.focus(); }
         addBubble('note', 'Editing \u2014 press Send to continue from here.');
+    }
+
+    // ------------------------------------------------------------------
+    // Director: secret episode directive injected into the storyteller
+    // ------------------------------------------------------------------
+
+    const DIRECTOR_KEY = 'cc_director';
+
+    function applyDirectorInjection() {
+        const c = ctx();
+        const d = metaRoot().director;
+        const depth = Number(settings?.directorDepth) || 4;
+        const role = c.extension_prompt_roles?.SYSTEM ?? 0;
+        try {
+            const value = (d && d.text)
+                ? "[Director's Note \u2014 secret from the player. Use it to give NPCs initiative and shape the episode, while always adapting to the player's choices instead of forcing outcomes. When the LANDING state is fully reached and the episode is complete, append the exact marker [EPISODE_END] at the very end of your reply.]\n" + d.text
+                : '';
+            c.setExtensionPrompt(DIRECTOR_KEY, value, 1, depth, false, role);
+        } catch (e) { console.warn(LOG, 'director injection failed', e); }
+    }
+
+    function directorAuthorPrompt(mode) {
+        const intensity = settings.directorIntensity || 'standard';
+        const anchors = String(settings.directorAnchors || '').trim();
+        const lines = [
+            'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
+            'Ground everything in [STORY MEMORY] and the current scene: use only established characters, motives, and world rules.',
+            'The note must contain:',
+            '1. EPISODE PREMISE \u2014 one television-episode-quality premise that rises naturally from existing threads.',
+            '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO initiates and what pressure it puts on the player character.',
+            '3. NPC INITIATIVE \u2014 antagonists and NPCs act first, with agency and menace true to their established methods.',
+            '4. LANDING \u2014 the natural end state of the episode and its consequence.',
+            'Calibration: intensity = ' + intensity + '. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes.',
+        ];
+        if (anchors) {
+            lines.push('Pacing reference (RHYTHM and episode structure ONLY \u2014 never import their characters, names, plots, or lines): ' + anchors);
+        }
+        lines.push('Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. Under 250 words. Output ONLY the director\'s note text, no preamble.');
+        if (mode === 'next') {
+            lines.push('A previous episode directive is provided; treat it as concluded and write the NEXT episode, carrying its consequences forward.');
+        }
+        if (mode === 'edit') {
+            lines.push('The CURRENT directive and the player\'s direction instruction are provided. Rewrite the directive to incorporate the player\'s direction while preserving whatever still works. Keep the same episode. If no current directive is provided, write a fresh one built around the player\'s direction.');
+        }
+        return lines.join('\n');
+    }
+
+    async function generateDirective(mode) {
+        if (running) return;
+        running = true;
+        setBusy(true);
+        const busyNote = addBubble('busy', mode === 'next' ? 'directing the next episode\u2026' : 'directing\u2026');
+        try {
+            const prev = metaRoot().director;
+            const user = buildContextBlock()
+                + (mode === 'next' && prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded]\n' + prev.text : '')
+                + '\n\nWrite the director\'s note now.';
+            const raw = await callLLM([
+                { role: 'system', content: directorAuthorPrompt(mode) },
+                { role: 'user', content: user },
+            ]);
+            const text = splitThinking(raw).rest.trim();
+            if (!text) throw new Error('empty directive');
+            const ep = mode === 'next' ? ((prev?.episode || 0) + 1) : (prev?.episode || 1);
+            metaRoot().director = { text, episode: ep, ts: Date.now() };
+            saveMeta();
+            applyDirectorInjection();
+            const note = '\uD83C\uDFAC Directive set (episode ' + ep + '). Content hidden \u2014 just keep playing.';
+            addBubble('note', note);
+            pushHistory('note', note);
+            updateSub();
+        } catch (err) {
+            addBubble('note', 'Director error: ' + (err?.message || err));
+        } finally {
+            busyNote.remove();
+            running = false;
+            setBusy(false);
+        }
+    }
+
+    function clearDirective() {
+        if (!metaRoot().director) { toast('No directive active.', 'warning'); return; }
+        if (!confirm('Remove the secret directive?')) return;
+        metaRoot().director = null;
+        saveMeta();
+        applyDirectorInjection();
+        const note = '\uD83C\uDFAC Directive cleared.';
+        addBubble('note', note);
+        pushHistory('note', note);
+        updateSub();
+    }
+
+    async function directorEdit(instruction) {
+        if (running) return;
+        running = true;
+        setBusy(true);
+        const busyNote = addBubble('busy', 'revising the directive\u2026');
+        try {
+            const prev = metaRoot().director;
+            const user = buildContextBlock()
+                + (prev?.text ? '\n\n[CURRENT DIRECTIVE]\n' + prev.text : '')
+                + '\n\n[PLAYER\'S DIRECTION INSTRUCTION]\n' + instruction
+                + '\n\nWrite the revised director\'s note now. Output ONLY the note text.';
+            const raw = await callLLM([
+                { role: 'system', content: directorAuthorPrompt('edit') },
+                { role: 'user', content: user },
+            ]);
+            const text = splitThinking(raw).rest.trim();
+            if (!text) throw new Error('empty directive');
+            const ep = prev?.episode || 1;
+            metaRoot().director = { text, episode: ep, ts: Date.now() };
+            saveMeta();
+            applyDirectorInjection();
+            const note = '\uD83C\uDFAC Directive revised around your direction (episode ' + ep + '). Beats stay hidden \u2014 \uD83C\uDFAC Peek to view.';
+            addBubble('note', note);
+            pushHistory('note', note);
+            updateSub();
+        } catch (err) {
+            addBubble('note', 'Director edit error: ' + (err?.message || err));
+        } finally {
+            busyNote.remove();
+            running = false;
+            setBusy(false);
+        }
+    }
+
+    async function directorStatus() {
+        const d = metaRoot().director;
+        if (!d) { toast('No directive active.', 'warning'); return; }
+        if (d.concluded) {
+            addBubble('note', '\uD83C\uDFAC Episode ' + d.episode + ' already concluded \u2014 press \uD83C\uDFAC Next when ready.');
+            return;
+        }
+        if (running) return;
+        running = true;
+        setBusy(true);
+        const busyNote = addBubble('busy', 'checking episode progress\u2026');
+        try {
+            const sys = 'You are checking secret episode progress for a roleplay director. You receive the SECRET DIRECTIVE and the story context. Judge whether the episode\'s LANDING has been reached. Reply with EXACTLY one line, spoiler-free, in one of these formats: "ONGOING \u2014 <short vague progress hint, no spoilers>" or "CONCLUDED \u2014 <short line>" or "DERAILED \u2014 <short line>". Never quote or reveal the directive contents.';
+            const user = buildContextBlock() + '\n\n[SECRET DIRECTIVE]\n' + d.text + '\n\nJudge the progress now.';
+            const raw = await callLLM([
+                { role: 'system', content: sys },
+                { role: 'user', content: user },
+            ]);
+            const line = splitThinking(raw).rest.trim().split('\n')[0].slice(0, 200);
+            addBubble('note', '\uD83C\uDFAC ' + line);
+            pushHistory('note', '\uD83C\uDFAC ' + line);
+            if (/^CONCLUDED/i.test(line)) {
+                metaRoot().director.concluded = true;
+                saveMeta();
+                updateSub();
+            }
+        } catch (err) {
+            addBubble('note', 'Director status error: ' + (err?.message || err));
+        } finally {
+            busyNote.remove();
+            running = false;
+            setBusy(false);
+        }
+    }
+
+    function peekDirective() {
+        const d = metaRoot().director;
+        if (!d) { toast('No directive active.', 'warning'); return; }
+        if (!confirm('Reveal the secret directive for episode ' + d.episode + '? This spoils the surprise.')) return;
+        showViewer('\uD83C\uDFAC Episode ' + d.episode + ' directive (spoiler)', d.text);
     }
 
     // ------------------------------------------------------------------
@@ -1134,6 +1314,11 @@
             '    <button class="cc_btn" id="cc_audit" title="Full continuity audit">Audit chat</button>',
             '    <button class="cc_btn" id="cc_retry" title="Regenerate the last copilot reply">Retry</button>',
             '    <button class="cc_btn" id="cc_dellast" title="Delete the last question + answer">Del last</button>',
+            '    <button class="cc_btn" id="cc_dirnew" title="Set or replace the secret episode directive">\uD83C\uDFAC New</button>',
+            '    <button class="cc_btn" id="cc_dirnext" title="Conclude this episode and direct the next">\uD83C\uDFAC Next</button>',
+            '    <button class="cc_btn" id="cc_diroff" title="Remove the directive">\uD83C\uDFAC Off</button>',
+            '    <button class="cc_btn" id="cc_dirstat" title="Spoiler-free episode progress check">\uD83C\uDFAC ?</button>',
+            '    <button class="cc_btn" id="cc_dirpeek" title="Reveal the directive (spoiler!)">\uD83C\uDFAC Peek</button>',
             '    <button class="cc_btn" id="cc_undo" title="Undo last applied batch">Undo</button>',
             '    <button class="cc_btn" id="cc_memcheck" title="Show detected memory sources">Memory?</button>',
             '    <button class="cc_btn" id="cc_context" title="Show the full context the copilot receives">Context</button>',
@@ -1169,6 +1354,11 @@
         el('cc_audit').addEventListener('click', () => send(AUDIT_PROMPT));
         el('cc_retry').addEventListener('click', () => retryLast());
         el('cc_dellast').addEventListener('click', () => deleteLastExchange());
+        el('cc_dirnew').addEventListener('click', () => generateDirective('new'));
+        el('cc_dirnext').addEventListener('click', () => generateDirective('next'));
+        el('cc_diroff').addEventListener('click', () => clearDirective());
+        el('cc_dirstat').addEventListener('click', () => directorStatus());
+        el('cc_dirpeek').addEventListener('click', () => peekDirective());
         el('cc_sess').addEventListener('change', () => switchSession(el('cc_sess').value));
         el('cc_sessnew').addEventListener('click', () => newSession());
         el('cc_sessren').addEventListener('click', () => renameSession());
@@ -1210,6 +1400,12 @@
             '<div class="cc_check"><input type="checkbox" id="cc_userok"><span>Allow editing my (user) messages</span></div>',
             '<div class="cc_check"><input type="checkbox" id="cc_hidden"><span>Include ghosted/hidden messages in index (token heavy)</span></div>',
             '<div class="cc_check"><input type="checkbox" id="cc_an"><span>Include Author\'s Note in story memory</span></div>',
+            '<div class="cc_row">',
+            '  <div><label>Director intensity</label><select id="cc_dir_int"><option value="slow-burn">slow-burn</option><option value="standard">standard</option><option value="intense">intense</option></select></div>',
+            '  <div><label>Director depth</label><input type="number" id="cc_dir_depth" min="0" max="20"></div>',
+            '</div>',
+            '<label>Director style anchors (optional pacing references)</label>',
+            '<input type="text" id="cc_dir_anchors" placeholder="e.g. Classroom of the Elite, Kaguya-sama">',
             '<label>Shortcut commands (one per line: #tag = prompt)</label>',
             '<textarea id="cc_shortcuts"></textarea>',
             '<label>System prompt (USER_EDIT_RULE is replaced automatically)</label>',
@@ -1230,6 +1426,9 @@
         el('cc_an').checked = !!settings.includeAuthorsNote;
         el('cc_stream').checked = !!settings.streaming;
         el('cc_showthink').checked = !!settings.showThinking;
+        el('cc_dir_int').value = settings.directorIntensity || 'standard';
+        el('cc_dir_depth').value = settings.directorDepth;
+        el('cc_dir_anchors').value = settings.directorAnchors || '';
         el('cc_shortcuts').value = settings.shortcuts;
         el('cc_sysprompt').value = settings.systemPrompt;
         refreshProfileSelect();
@@ -1245,7 +1444,11 @@
             settings.includeAuthorsNote = el('cc_an').checked;
             settings.streaming = el('cc_stream').checked;
             settings.showThinking = el('cc_showthink').checked;
+            settings.directorIntensity = el('cc_dir_int').value || 'standard';
+            settings.directorDepth = Number(el('cc_dir_depth').value) || 4;
+            settings.directorAnchors = el('cc_dir_anchors').value;
             settings.shortcuts = el('cc_shortcuts').value;
+            applyDirectorInjection();
             settings.systemPrompt = el('cc_sysprompt').value || DEFAULT_SYSTEM_PROMPT;
             persistSettings();
             toast('Settings saved.', 'success');
@@ -1411,7 +1614,8 @@
         if (!sub) return;
         const c = ctx();
         const count = Array.isArray(c.chat) ? c.chat.length : 0;
-        sub.textContent = 'v' + VERSION + ' · ' + count + ' messages';
+        const d = metaRoot().director;
+        sub.textContent = 'v' + VERSION + ' · ' + count + ' messages' + (d ? ' · \uD83C\uDFAC E' + d.episode + (d.concluded ? ' \u2713' : '') : '');
     }
 
     function togglePanel(force) {
@@ -1498,7 +1702,27 @@
                     renderHistory();
                     renderEditCards();
                 }
+                applyDirectorInjection();
                 updateSub();
+            });
+            c.eventSource?.on?.(c.event_types?.MESSAGE_RECEIVED, async (i) => {
+                try {
+                    const d = metaRoot().director;
+                    if (!d || d.concluded) return;
+                    const msg = ctx().chat?.[Number(i)];
+                    if (!msg || msg.is_user || typeof msg.mes !== 'string') return;
+                    if (!msg.mes.includes('[EPISODE_END]')) return;
+                    msg.mes = msg.mes.replace(/\s*\[EPISODE_END\]\s*$/, '').replace(/\[EPISODE_END\]/g, '').trim();
+                    refreshMessage(Number(i));
+                    try { await ctx().saveChat?.(); } catch (e2) { /* ignore */ }
+                    d.concluded = true;
+                    saveMeta();
+                    updateSub();
+                    const note = '\uD83C\uDFAC Episode ' + d.episode + ' concluded \u2014 press \uD83C\uDFAC Next when ready.';
+                    toast(note, 'success');
+                    addBubble('note', note);
+                    pushHistory('note', note);
+                } catch (e2) { /* ignore */ }
             });
         } catch (e) { /* ignore */ }
     }
@@ -1513,6 +1737,7 @@
         try {
             loadSettings();
             buildPanel();
+            applyDirectorInjection();
             addMenuButton();
             bindEvents();
             registerSlash();
