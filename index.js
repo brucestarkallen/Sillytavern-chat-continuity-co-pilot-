@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.1.0';
+    const VERSION = '2.2.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -63,6 +63,7 @@
         '- "find" must be verbatim from [STORY MEMORY] and long enough to be unique. Keep corrections minimal and in the same style.',
         '- To replace an ENTIRE memory field, use {"path": "summaryception.notepad", "replace": "new full text", "reason": "..."} with the exact path shown in [STORY MEMORY] section headers. Adding "find" alongside "path" replaces only within that field.',
         '- The Author\'s Note is writable at path "note_prompt" (created if absent). The visible editor-critique notes are writable at path "cc_critique"; full replace with "" deletes them.',
+        '- LARGE CHANGES: if a replacement would be very long, split the work into SEVERAL smaller find/replace edits (section by section) in the same block instead of one huge replace \u2014 each edit\'s replace text must stay comfortably within the response budget, or the reply gets cut off.',
         '- Use <edits> only for chat messages and <memedits> only for memory. Never mix them.',
     ].join('\n');
 
@@ -518,7 +519,7 @@
     async function callLLM(messages, onPartial) {
         const c = ctx();
         const pid = settings.profileId;
-        const maxTok = Number(settings.maxTokens) || 2048;
+        const maxTok = Math.min(32768, Math.max(256, Number(settings.maxTokens) || 4096));
         stopRequested = false;
         try { abortCtl = new AbortController(); } catch (e) { abortCtl = null; }
 
@@ -604,6 +605,13 @@
             if (!fallback) fallback = cand;
         }
         return fallback;
+    }
+
+    function looksTruncated(text, tag) {
+        const low = String(text || '').toLowerCase();
+        const o = low.lastIndexOf('<' + tag + '>');
+        if (o === -1) return false;
+        return low.indexOf('</' + tag + '>', o) === -1;
     }
 
     function parseFetch(text) {
@@ -1208,6 +1216,11 @@
                 const warn = '\u26A0 Ran out of fetch rounds while the copilot was still requesting messages \u2014 the answer may be incomplete. Raise "Fetch rounds" in settings, or narrow the request (e.g. one snippet/layer at a time).';
                 addBubble('note', warn);
                 pushHistory('note', warn);
+            }
+            if (looksTruncated(reply, 'edits') || looksTruncated(reply, 'memedits')) {
+                const twarn = '\u26A0 The reply looks cut off mid-edit block (response budget too small). Raise "Max output tokens" toward your provider\'s output limit, or tell the copilot to split the change into several smaller edits.';
+                addBubble('note', twarn);
+                pushHistory('note', twarn);
             }
 
             const parsed = parseEdits(reply);
@@ -1912,8 +1925,9 @@
             '<div class="cc_row">',
             '  <div><label>Recent msgs sent in full</label><input type="number" id="cc_recent" min="0" max="100"></div>',
             '  <div><label>Fetch rounds</label><input type="number" id="cc_rounds" min="0" max="6"></div>',
-            '  <div><label>Max tokens</label><input type="number" id="cc_maxtok" min="256" max="16384" step="256"></div>',
+            '  <div><label>Max output tokens</label><input type="number" id="cc_maxtok" min="256" max="32768" step="256"></div>',
             '</div>',
+            '<div style="font-size:0.78em;opacity:0.65;margin-top:2px;">Max output = your provider\'s response limit (GLM providers: usually 8k\u201316k). Asking for more than the provider allows rejects the whole request \u2014 bigger is not better.</div>',
             '<label>Memory source words (any source whose name contains one of these is included; separate with |)</label>',
             '<input type="text" id="cc_pattern">',
             '<div class="cc_check"><input type="checkbox" id="cc_stream"><span>Streaming (needs a Connection Profile)</span></div>',
@@ -1974,7 +1988,7 @@
             settings.profileId = el('cc_profile').value;
             settings.recentFull = Number(el('cc_recent').value) || 0;
             settings.fetchRounds = Number(el('cc_rounds').value) || 0;
-            settings.maxTokens = Number(el('cc_maxtok').value) || 2048;
+            settings.maxTokens = Math.min(32768, Math.max(256, Number(el('cc_maxtok').value) || 4096));
             settings.memoryKeyPattern = el('cc_pattern').value || defaults.memoryKeyPattern;
             settings.allowUserEdits = el('cc_userok').checked;
             settings.includeHidden = el('cc_hidden').checked;
