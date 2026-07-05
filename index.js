@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.8.0';
+    const VERSION = '2.9.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -111,6 +111,9 @@
         fetchRounds: 3,
         maxTokens: 4096,
         thinkRetries: 2,
+        wiEnable: false,
+        wiBooks: '',
+        wiFull: false,
         historyDepth: 12,
         memoryKeyPattern: 'summar|ception|memory|qvink',
         allowUserEdits: false,
@@ -367,6 +370,222 @@
         return out.join('\n\n');
     }
 
+    // ------------------------------------------------------------------
+    // Worldbook (SillyTavern World Info) bridge \u2014 fully gated
+    // ------------------------------------------------------------------
+    function wiApiAvailable() {
+        const c = ctx();
+        return typeof c.loadWorldInfo === 'function' && typeof c.saveWorldInfo === 'function';
+    }
+
+    function wiChosenBooks() {
+        return String(settings.wiBooks || '').split(',').map(x => x.trim()).filter(Boolean);
+    }
+
+    function wiActive() {
+        return !!settings.wiEnable && wiApiAvailable() && wiChosenBooks().length > 0;
+    }
+
+    async function wiLoad(book) {
+        const c = ctx();
+        try {
+            const data = await c.loadWorldInfo(book);
+            if (data && data.entries) return data;
+        } catch (e) { console.warn(LOG, 'wiLoad failed', book, e); }
+        return null;
+    }
+
+    async function wiSave(book, data) {
+        const c = ctx();
+        try { await c.saveWorldInfo(book, data, true); }
+        catch (e) {
+            try { await c.saveWorldInfo(book, data); }
+            catch (e2) { console.warn(LOG, 'wiSave failed', book, e2); return false; }
+        }
+        try { c.updateWorldInfoList?.(); } catch (e) { /* ignore */ }
+        try { c.reloadWorldInfoEditor?.(book); } catch (e) { /* ignore */ }
+        return true;
+    }
+
+    function wiEntryList(data) {
+        if (!data || !data.entries) return [];
+        return Object.values(data.entries);
+    }
+
+    // Inspect the live ST state and report where Worldbooks live.
+    function wiDiscover() {
+        const c = ctx();
+        const out = { character: null, chat: null, globals: [], all: [] };
+        try {
+            const ch = c.characters?.[c.characterId];
+            out.character = ch?.data?.extensions?.world || ch?.data?.world || null;
+        } catch (e) { /* ignore */ }
+        try {
+            const md = c.chatMetadata || c.chat_metadata || {};
+            const cw = md.world_info;
+            if (typeof cw === 'string') out.chat = cw;
+            else if (cw && typeof cw === 'object') out.chat = cw.world || cw.name || null;
+        } catch (e) { /* ignore */ }
+        try {
+            if (Array.isArray(c.world_names)) out.all = c.world_names.slice();
+            else if (typeof window !== 'undefined' && Array.isArray(window.world_names)) out.all = window.world_names.slice();
+            const sel = c.selected_world_info || (typeof window !== 'undefined' ? window.selected_world_info : null);
+            if (Array.isArray(sel)) out.globals = sel.slice();
+        } catch (e) { /* ignore */ }
+        return out;
+    }
+
+    async function wiDetectReport() {
+        if (!wiApiAvailable()) {
+            addBubble('note', '\u26A0 This SillyTavern build does not expose the World Info API to extensions \u2014 Worldbook features unavailable.');
+            return;
+        }
+        const d = wiDiscover();
+        const lines = ['\uD83C\uDF10 Worldbook detection:'];
+        lines.push('\u2022 Character-bound: ' + (d.character || '(none)'));
+        lines.push('\u2022 Chat-bound: ' + (d.chat || '(none)'));
+        lines.push('\u2022 Active global(s): ' + (d.globals.length ? d.globals.join(', ') : '(none/undetectable)'));
+        if (d.all.length) lines.push('\u2022 All known books: ' + d.all.join(', '));
+        const suggestions = [...new Set([d.character, d.chat, ...d.globals].filter(Boolean))];
+        if (suggestions.length) lines.push('\nSuggested to manage: ' + suggestions.join(', ') + '  (put these in Settings \u2192 Worldbook \u2192 book names)');
+        else lines.push('\nNo bound book auto-detected. Open ST\'s World Info panel, note the book name, and type it into Settings \u2192 Worldbook.');
+        const txt = lines.join('\n');
+        addBubble('note', txt);
+        pushHistory('note', txt);
+    }
+
+    async function wiBuildContext() {
+        // Returns a [WORLDBOOK] block for the pilot's context, respecting mode.
+        if (!wiActive()) return '';
+        const books = wiChosenBooks();
+        const full = !!settings.wiFull;
+        const parts = [];
+        for (const book of books) {
+            const data = await wiLoad(book);
+            if (!data) { parts.push('(book "' + book + '" could not be loaded)'); continue; }
+            const entries = wiEntryList(data);
+            parts.push('=== Worldbook: ' + book + ' (' + entries.length + ' entries) ===');
+            for (const e of entries) {
+                const uid = e.uid;
+                const title = (e.comment || '').trim() || '(untitled)';
+                const keys = Array.isArray(e.key) ? e.key.join(', ') : '';
+                const flags = [e.constant ? 'constant' : '', e.disable ? 'DISABLED' : '', e.vectorized ? 'vector' : ''].filter(Boolean).join(',');
+                const head = 'WB[' + book + '#' + uid + '] "' + title + '"' + (keys ? ' {keys: ' + keys + '}' : '') + (flags ? ' [' + flags + ']' : '');
+                if (full) {
+                    parts.push(head + '\n' + String(e.content || ''));
+                } else {
+                    const snip = String(e.content || '').replace(/\s+/g, ' ').slice(0, 120);
+                    parts.push(head + ' \u2014 ' + snip + (String(e.content || '').length > 120 ? '\u2026' : ''));
+                }
+            }
+        }
+        if (!parts.length) return '';
+        const header = full
+            ? '[WORLDBOOK \u2014 full entries; editable via wiedits by WB[book#uid]:]'
+            : '[WORLDBOOK \u2014 catalog (titles/keys/snippet). Use <wifetch>["book#uid"] for full text; edit via wiedits:]';
+        return header + '\n' + parts.join('\n');
+    }
+
+    function parseWiFetch(text) {
+        const b = findBlock(text, 'wifetch');
+        if (!b) return null;
+        const m = b.inner.match(/\[[\s\S]*?\]/);
+        if (!m) return null;
+        try {
+            const arr = JSON.parse(m[0]);
+            return Array.isArray(arr) ? arr.map(String) : null;
+        } catch (e) { return null; }
+    }
+
+    async function wiFullText(refs) {
+        // refs: ["book#uid", ...]
+        const byBook = {};
+        for (const r of refs) {
+            const mm = /^(.*)#(\d+)$/.exec(String(r).trim());
+            if (!mm) continue;
+            (byBook[mm[1]] = byBook[mm[1]] || []).push(Number(mm[2]));
+        }
+        const out = [];
+        for (const [book, uids] of Object.entries(byBook)) {
+            const data = await wiLoad(book);
+            if (!data) { out.push('(book "' + book + '" not found)'); continue; }
+            for (const e of wiEntryList(data)) {
+                if (uids.includes(Number(e.uid))) {
+                    out.push('WB[' + book + '#' + e.uid + '] "' + (e.comment || '').trim() + '"\n' + String(e.content || ''));
+                }
+            }
+        }
+        return out.join('\n\n') || '(no matching entries)';
+    }
+
+    function parseWiEdits(text) {
+        const b = findBlock(text, 'wiedits');
+        if (!b) return { edits: [] };
+        let raw = b.inner.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+        let arr;
+        try { arr = JSON.parse(raw); } catch (e) { return { edits: [], error: e.message }; }
+        if (!Array.isArray(arr)) arr = [arr];
+        const edits = [];
+        for (const o of arr) {
+            if (!o || typeof o !== 'object') continue;
+            const book = String(o.book || (wiChosenBooks()[0] || '')).trim();
+            if (!book) continue;
+            edits.push({
+                kind: 'wi', book,
+                uid: (o.uid === undefined || o.uid === null) ? null : Number(o.uid),
+                find: (o.find === undefined) ? null : String(o.find),
+                replace: o.replace !== undefined ? String(o.replace) : (o.replace_content !== undefined ? String(o.replace_content) : ''),
+                setKeys: Array.isArray(o.set_keys) ? o.set_keys.map(String) : null,
+                newEntry: !!o.new_entry,
+                comment: o.comment !== undefined ? String(o.comment) : null,
+                constant: o.constant,
+                disable: o.disable,
+                reason: o.reason ? String(o.reason) : '',
+                status: 'pending',
+            });
+        }
+        return { edits };
+    }
+
+    async function applyWiOne(edit) {
+        const data = await wiLoad(edit.book);
+        if (!data) return { ok: false, reason: 'book "' + edit.book + '" not found' };
+        const before = JSON.parse(JSON.stringify(data));
+        if (edit.newEntry) {
+            let maxUid = -1;
+            for (const e of wiEntryList(data)) maxUid = Math.max(maxUid, Number(e.uid));
+            const uid = maxUid + 1;
+            data.entries[String(uid)] = {
+                uid, key: edit.setKeys || [], keysecondary: [], comment: edit.comment || 'New entry',
+                content: edit.replace || '', constant: !!edit.constant, vectorized: false, selective: true,
+                order: 100, position: 0, disable: !!edit.disable, addMemo: true, excludeRecursion: false,
+                probability: 100, useProbability: true, group: '', groupOverride: false, scanDepth: null,
+                caseSensitive: null, matchWholeWords: null, automationId: '', role: null, sticky: 0, cooldown: 0, delay: 0,
+            };
+            const ok = await wiSave(edit.book, data);
+            return ok ? { ok: true, book: edit.book, before, path: edit.book + '#' + uid + ' (new)' } : { ok: false, reason: 'save failed' };
+        }
+        const entry = wiEntryList(data).find(e => Number(e.uid) === edit.uid);
+        if (!entry) return { ok: false, reason: 'entry uid ' + edit.uid + ' not found in ' + edit.book };
+        const metaOnly = (edit.setKeys || edit.disable !== undefined || edit.constant !== undefined) && edit.find === null && (edit.replace === '' || edit.replace === undefined || edit.replace === null);
+        if (edit.setKeys) entry.key = edit.setKeys;
+        if (edit.disable !== undefined) entry.disable = !!edit.disable;
+        if (edit.constant !== undefined) entry.constant = !!edit.constant;
+        if (metaOnly) {
+            // keys/flags only \u2014 leave content untouched
+        } else if (edit.find === null) {
+            entry.content = edit.replace;
+        } else if (edit.find !== null) {
+            const cur = String(entry.content || '');
+            const cnt = cur.split(edit.find).length - 1;
+            if (cnt === 0) return { ok: false, reason: 'find text not in entry (content changed?)' };
+            if (cnt > 1) return { ok: false, reason: 'find matches ' + cnt + ' places \u2014 use a longer unique excerpt' };
+            entry.content = cur.replace(edit.find, edit.replace);
+        }
+        const ok = await wiSave(edit.book, data);
+        return ok ? { ok: true, book: edit.book, before, path: edit.book + '#' + edit.uid } : { ok: false, reason: 'save failed' };
+    }
+
     function gatherMemory() {
         const c = ctx();
         const parts = [];
@@ -479,7 +698,7 @@
         const n = Math.max(0, Math.min(100, Number(settings.recentFull) || 0));
         const ids = [];
         for (let i = Math.max(0, chat.length - n); i < chat.length; i++) ids.push(i);
-        return [
+        const base = [
             '[STORY MEMORY]',
             gatherMemory(),
             '',
@@ -489,13 +708,27 @@
             '[FULL MESSAGES] (last ' + ids.length + ')',
             ids.length ? fullTextOf(ids) : '(none)',
         ].join('\n');
+        return base;
     }
+
+    const WI_RULES = [
+        'WORLDBOOK (World Info) is shown in the [WORLDBOOK] block, referenced as WB[book#uid]. It is part of the world canon \u2014 audit it for continuity like [STORY MEMORY] (contradictions with the notepad, snippets, ledger, or chat).',
+        'In catalog mode you see titles/keys/snippets; request full text with <wifetch>["book#uid", ...] (same loop as <fetch>).',
+        'To edit the Worldbook, emit a <wiedits> block (JSON array). Ops:',
+        '{"book":"Name","uid":3,"find":"verbatim excerpt","replace":"new text","reason":".."} \u2014 targeted edit; find must be unique in that entry.',
+        '{"book":"Name","uid":3,"replace_content":"entire new entry text","reason":".."} \u2014 whole-entry replace.',
+        '{"book":"Name","uid":3,"set_keys":["a","b"],"reason":".."} \u2014 update trigger keywords.',
+        '{"book":"Name","new_entry":true,"comment":"Title","keys":["k"],"content":"..","constant":false,"reason":".."} \u2014 add an entry.',
+        'Only edit the Worldbook when asked or when fixing a real continuity error. Keep [WORLDBOOK] and [STORY MEMORY] consistent with each other.',
+    ].join('\n');
 
     function sysPrompt() {
         const rule = settings.allowUserEdits
             ? 'You may edit user-authored messages when the user asks for it.'
             : 'Never propose edits to user-authored messages; they are read-only.';
-        return String(settings.systemPrompt || DEFAULT_SYSTEM_PROMPT).replace('USER_EDIT_RULE', rule) + '\n\n' + CHAT_EDIT_EXTRAS + '\n\n' + MEMEDIT_RULES;
+        let out = String(settings.systemPrompt || DEFAULT_SYSTEM_PROMPT).replace('USER_EDIT_RULE', rule) + '\n\n' + CHAT_EDIT_EXTRAS + '\n\n' + MEMEDIT_RULES;
+        if (wiActive()) out += '\n\n' + WI_RULES;
+        return out;
     }
 
     // ------------------------------------------------------------------
@@ -1086,6 +1319,7 @@
         const chatApplied = [];
         const memPaths = [];
         const keyBackups = new Map();
+        const wiBackups = new Map();
         for (const edit of list) {
             if (edit.status !== 'pending') continue;
             if (edit.kind === 'mem') {
@@ -1093,6 +1327,14 @@
                 if (res.ok) {
                     edit.status = 'applied \u2192 ' + res.path + (res.fuzzy ? ' (fuzzy)' : '');
                     memPaths.push(res.path);
+                } else {
+                    edit.status = 'failed: ' + res.reason;
+                }
+            } else if (edit.kind === 'wi') {
+                const res = await applyWiOne(edit);
+                if (res.ok) {
+                    edit.status = 'applied \u2192 WB ' + res.path;
+                    if (!wiBackups.has(res.book)) wiBackups.set(res.book, res.before);
                 } else {
                     edit.status = 'failed: ' + res.reason;
                 }
@@ -1108,6 +1350,7 @@
         }
         const items = [...chatApplied];
         for (const [key, before] of keyBackups.entries()) items.push({ kind: 'mem', key, before });
+        for (const [book, before] of wiBackups.entries()) items.push({ kind: 'wi', book, before });
         if (items.length) {
             const labelParts = [];
             if (chatApplied.length) labelParts.push(chatApplied.map(a => '#' + a.id).join(', '));
@@ -1133,6 +1376,10 @@
             if (item.kind === 'mem') {
                 const md = c.chatMetadata || c.chat_metadata;
                 if (md) { md[item.key] = item.before; memRestored = true; }
+                continue;
+            }
+            if (item.kind === 'wi') {
+                await wiSave(item.book, item.before);
                 continue;
             }
             const msg = c.chat?.[item.id];
@@ -1307,6 +1554,12 @@
                 { role: 'system', content: buildContextBlock() },
                 ...historyForLLM(Number.isInteger(opts.swipeIdx) ? opts.swipeIdx : undefined),
             ];
+            if (wiActive()) {
+                try {
+                    const wb = await wiBuildContext();
+                    if (wb) messages.splice(2, 0, { role: 'system', content: wb });
+                } catch (e) { console.warn(LOG, 'wi context failed', e); }
+            }
 
             let reply = '';
             let think = '';
@@ -1321,6 +1574,14 @@
                     addBubble('note', 'Generation stopped \u2014 partial reply kept.');
                     pushHistory('note', 'Generation stopped \u2014 partial reply kept.');
                     break;
+                }
+                const wiRefs = wiActive() ? parseWiFetch(reply) : null;
+                if (wiRefs && wiRefs.length && round < rounds) {
+                    const note = '\uD83C\uDF10 Copilot read full Worldbook entries: ' + wiRefs.join(', ');
+                    addBubble('note', note); pushHistory('note', note);
+                    messages.push({ role: 'assistant', content: reply });
+                    messages.push({ role: 'user', content: '[WORLDBOOK ENTRIES]\n' + await wiFullText(wiRefs) });
+                    continue;
                 }
                 const ids = parseFetch(reply);
                 if (!ids || round === rounds) break;
@@ -1383,7 +1644,9 @@
             const parsedMem = parseMemEdits(reply);
             if (parsed.error) addBubble('note', 'Edit block error: ' + parsed.error + ' — ask the copilot to resend valid JSON.');
             if (parsedMem.error) addBubble('note', 'Memory edit block error: ' + parsedMem.error + ' — ask the copilot to resend valid JSON.');
-            const allEdits = [...parsed.edits, ...parsedMem.edits];
+            const parsedWi = wiActive() ? parseWiEdits(reply) : { edits: [] };
+            if (parsedWi.error) addBubble('note', 'Worldbook edit block error: ' + parsedWi.error + ' \u2014 ask the copilot to resend valid JSON.');
+            const allEdits = [...parsed.edits, ...parsedMem.edits, ...parsedWi.edits];
             if (allEdits.length) {
                 editsCollapsed = false;
                 stampReviewState(allEdits);
@@ -2023,6 +2286,7 @@
             '          <button class="cc_btn" id="cc_ledger_now" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Run a character-ledger update pass now">\uD83E\uDDEC Ledger: update</button>',
             '          <button class="cc_btn" id="cc_ledger_peek" style="display:block;width:100%;margin:3px 0;text-align:left;" title="View or hand-edit the ledger JSON">\uD83E\uDDEC Ledger: peek/edit</button>',
             '          <button class="cc_btn" id="cc_ledger_restore" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Restore the most recent ledger backup">\uD83E\uDDEC Ledger: restore</button>',
+            '          <button class="cc_btn" id="cc_wi_detect" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Inspect ST and report where your Worldbooks live">\uD83C\uDF10 Worldbook: detect</button>',
             '          <button class="cc_btn" id="cc_clear" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Clear copilot conversation">\uD83E\uDDF9 Clear session</button>',
             '        </div>',
             '      </div>',
@@ -2069,6 +2333,7 @@
         el('cc_ledger_now').addEventListener('click', () => runLedgerUpdate(false));
         el('cc_ledger_peek').addEventListener('click', () => ledgerPeek());
         el('cc_ledger_restore').addEventListener('click', () => ledgerRestore());
+        el('cc_wi_detect').addEventListener('click', () => wiDetectReport());
         el('cc_more').addEventListener('click', () => {
             const mm = el('cc_more_menu');
             if (mm) mm.style.display = mm.style.display === 'none' ? 'block' : 'none';
@@ -2141,6 +2406,12 @@
             '  <div><label>Ledger active window (msgs)</label><input type="number" id="cc_led_win" min="1" max="100"></div>',
             '</div>',
             '<div class="cc_check"><input type="checkbox" id="cc_led_inject"><span>Inject [CHARACTER CONTINUITY] into the storyteller</span></div>',
+            '<div style="margin:10px 0 2px;font-weight:600;opacity:0.75;">Worldbook (World Info) \u2014 optional</div>',
+            '<div class="cc_check"><input type="checkbox" id="cc_wi_enable"><span>Let the copilot see & edit Worldbook entries (off = ignored entirely)</span></div>',
+            '<label>Book name(s) to manage (comma-separated; use \u201CWorldbook: detect\u201D in the \u22EE menu to find them)</label>',
+            '<input type="text" id="cc_wi_books" placeholder="e.g. Mithraic Academy Lore">',
+            '<div class="cc_check"><input type="checkbox" id="cc_wi_full"><span>Load FULL entry text into the copilot (token heavy; off = catalog + fetch-on-demand)</span></div>',
+            '<div style="font-size:0.78em;opacity:0.65;margin-top:2px;">Off = the copilot sees a lightweight catalog (titles, keys, snippets) and pulls full entries only when it needs them \u2014 safe for large books. On = every managed entry\'s full text every message.</div>',
             '<label>Director system prompt (INTENSITY_LEVEL is replaced automatically)</label>',
             '<textarea id="cc_dir_prompt"></textarea>',
             '<div style="margin:10px 0 2px;font-weight:600;opacity:0.75;">Prompts & shortcuts</div>',
@@ -2178,6 +2449,9 @@
         el('cc_led_depth').value = settings.ledgerDepth;
         el('cc_led_win').value = settings.ledgerWindow;
         el('cc_led_inject').checked = !!settings.ledgerInject;
+        el('cc_wi_enable').checked = !!settings.wiEnable;
+        el('cc_wi_books').value = settings.wiBooks || '';
+        el('cc_wi_full').checked = !!settings.wiFull;
         el('cc_dir_prompt').value = settings.directorPrompt || DEFAULT_DIRECTOR_PROMPT;
         el('cc_shortcuts').value = settings.shortcuts;
         el('cc_sysprompt').value = settings.systemPrompt;
@@ -2207,6 +2481,9 @@
             settings.ledgerDepth = Number(el('cc_led_depth').value) || 6;
             settings.ledgerWindow = Math.max(1, Number(el('cc_led_win').value) || 20);
             settings.ledgerInject = el('cc_led_inject').checked;
+            settings.wiEnable = el('cc_wi_enable').checked;
+            settings.wiBooks = el('cc_wi_books').value;
+            settings.wiFull = el('cc_wi_full').checked;
             settings.directorPrompt = el('cc_dir_prompt').value || DEFAULT_DIRECTOR_PROMPT;
             settings.shortcuts = el('cc_shortcuts').value;
             applyInjections();
@@ -2412,9 +2689,10 @@
         let lastBatch = null;
         pendingEdits.forEach((edit, idx) => {
             const isMem = edit.kind === 'mem';
-            const msg = isMem ? null : chat[edit.id];
-            const who = isMem ? '' : (msg ? (msg.is_user ? 'USER' : (msg.name || 'AI')) : '?');
-            const label = isMem ? 'MEMORY' : ('#' + edit.id + ' ' + esc(who));
+            const isWi = edit.kind === 'wi';
+            const msg = (isMem || isWi) ? null : chat[edit.id];
+            const who = (isMem || isWi) ? '' : (msg ? (msg.is_user ? 'USER' : (msg.name || 'AI')) : '?');
+            const label = isWi ? ('\uD83C\uDF10 WB ' + esc(edit.book + '#' + (edit.newEntry ? 'new' : edit.uid))) : (isMem ? 'MEMORY' : ('#' + edit.id + ' ' + esc(who)));
             if (maxBatch > 1 && (edit.batch || 1) !== lastBatch) {
                 lastBatch = edit.batch || 1;
                 const div = document.createElement('div');
@@ -2424,7 +2702,9 @@
             }
             const card = document.createElement('div');
             card.className = 'cc_card';
-            const findShown = (!isMem && edit.hide !== null && edit.hide !== undefined)
+            const findShown = isWi
+                ? (edit.newEntry ? '(new entry: ' + (edit.comment || '') + ')' : (edit.setKeys ? '(set keys: ' + edit.setKeys.join(', ') + ')' : (edit.find == null ? '(replace entry content)' : edit.find)))
+                : (!isMem && edit.hide !== null && edit.hide !== undefined)
                 ? (edit.hide ? '(hide message from AI context \u2014 text stays in log)' : '(unhide message)')
                 : edit.find == null
                     ? (isMem ? '(replace entire field: ' + (edit.path || '?') + ')' : '(replace entire message)')
