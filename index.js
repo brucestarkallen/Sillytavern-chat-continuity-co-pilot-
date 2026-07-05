@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.6.1';
+    const VERSION = '2.7.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -109,6 +109,7 @@
         recentFull: 8,
         fetchRounds: 3,
         maxTokens: 4096,
+        thinkRetries: 2,
         historyDepth: 12,
         memoryKeyPattern: 'summar|ception|memory|qvink',
         allowUserEdits: false,
@@ -1173,13 +1174,36 @@
     }
 
     async function callLLMSmart(messages, onPartial) {
+        const trRaw = Number(settings.thinkRetries);
+        const maxRe = Number.isFinite(trRaw) ? Math.max(0, Math.min(4, trRaw)) : 2;
         let raw = await callLLM(messages, onPartial);
         let sp = splitThinking(raw);
-        if (!stopRequested && !sp.rest && sp.think) {
-            addBubble('note', '\u26A0 Answer was consumed by thinking \u2014 auto-retrying with a directness nudge\u2026');
-            const retryMsgs = [...messages, { role: 'user', content: '[SYSTEM] Your previous attempt was consumed entirely by internal reasoning and produced no visible answer. Respond again now with MINIMAL deliberation: go straight to the final answer and required blocks.' }];
-            raw = await callLLM(retryMsgs, onPartial);
-            sp = splitThinking(raw);
+
+        // Phase A: thinking consumed the whole budget -> feed the reasoning back, demand transcription
+        let attempts = 0;
+        while (!stopRequested && !sp.rest && sp.think && attempts < maxRe) {
+            attempts++;
+            addBubble('note', '\u26A0 Answer consumed by thinking \u2014 recovery ' + attempts + '/' + maxRe + ': feeding your reasoning back, demanding the direct answer\u2026');
+            const msgs2 = [...messages,
+                { role: 'assistant', content: '<previous_reasoning>\n' + sp.think.slice(-20000) + '\n</previous_reasoning>' },
+                { role: 'user', content: '[SYSTEM] Above is your own prior reasoning \u2014 the analysis is DONE. Do not reason further. Convert it into the final answer and required blocks NOW, directly.' }];
+            raw = await callLLM(msgs2, onPartial);
+            const sp2 = splitThinking(raw);
+            sp = { think: sp.think + (sp2.think ? '\n\n' + sp2.think : ''), rest: sp2.rest };
+        }
+
+        // Phase B: answer exists but was cut mid-block -> continue from the cut and stitch
+        let cont = 0;
+        while (!stopRequested && sp.rest && cont < maxRe &&
+               (looksTruncated(sp.rest, 'edits') || looksTruncated(sp.rest, 'memedits') || looksTruncated(sp.rest, 'ledgerops'))) {
+            cont++;
+            addBubble('note', '\u26A0 Output cut mid-block \u2014 auto-continuing (' + cont + '/' + maxRe + ')\u2026');
+            const msgs3 = [...messages,
+                { role: 'assistant', content: sp.rest },
+                { role: 'user', content: '[SYSTEM] Your output was cut off mid-block. Continue EXACTLY from the character where you stopped. Output ONLY the remainder \u2014 no repetition, no preamble, no further reasoning.' }];
+            raw = await callLLM(msgs3, onPartial);
+            const sp3 = splitThinking(raw);
+            sp = { think: sp.think + (sp3.think ? '\n\n' + sp3.think : ''), rest: sp.rest + sp3.rest };
         }
         return sp;
     }
@@ -1336,7 +1360,7 @@
                 pushHistory('note', warn);
             }
             if (!reply && think && !stopRequested) {
-                const twarn2 = '\u26A0 The model spent its entire output budget on thinking and produced no answer, even after an automatic retry. Raise "Max output tokens" in settings, lower the reasoning effort in this Connection Profile\'s preset, or narrow the request. The thinking is preserved above so the tokens were not wasted.';
+                const twarn2 = '\u26A0 The model spent its entire output budget on thinking and produced no answer, even after automatic recoveries. Raise "Max output tokens" in settings, lower the reasoning effort in this Connection Profile\'s preset, or narrow the request. The thinking is preserved above so the tokens were not wasted.';
                 addBubble('note', twarn2);
                 pushHistory('note', twarn2);
             }
@@ -2072,6 +2096,8 @@
             '  <div><label>Max output tokens</label><input type="number" id="cc_maxtok" min="256" max="32768" step="256"></div>',
             '</div>',
             '<div style="font-size:0.78em;opacity:0.65;margin-top:2px;">Max output = your provider\'s response limit (GLM providers: usually 8k\u201316k). Asking for more than the provider allows rejects the whole request \u2014 bigger is not better.</div>',
+            '<label>Auto-recovery retries (answer eaten by thinking / cut mid-block)</label>',
+            '<input type="number" id="cc_think_retries" min="0" max="4">',
             '<label>Memory source words (any source whose name contains one of these is included; separate with |)</label>',
             '<input type="text" id="cc_pattern">',
             '<div class="cc_check"><input type="checkbox" id="cc_stream"><span>Streaming (needs a Connection Profile)</span></div>',
@@ -2117,6 +2143,7 @@
         el('cc_recent').value = settings.recentFull;
         el('cc_rounds').value = settings.fetchRounds;
         el('cc_maxtok').value = settings.maxTokens;
+        el('cc_think_retries').value = Number.isFinite(Number(settings.thinkRetries)) ? settings.thinkRetries : 2;
         el('cc_pattern').value = settings.memoryKeyPattern;
         el('cc_userok').checked = !!settings.allowUserEdits;
         el('cc_hidden').checked = !!settings.includeHidden;
@@ -2144,6 +2171,8 @@
             settings.recentFull = Number(el('cc_recent').value) || 0;
             settings.fetchRounds = Number(el('cc_rounds').value) || 0;
             settings.maxTokens = Math.min(32768, Math.max(256, Number(el('cc_maxtok').value) || 4096));
+            const trv = Number(el('cc_think_retries').value);
+            settings.thinkRetries = Number.isFinite(trv) ? Math.max(0, Math.min(4, trv)) : 2;
             settings.memoryKeyPattern = el('cc_pattern').value || defaults.memoryKeyPattern;
             settings.allowUserEdits = el('cc_userok').checked;
             settings.includeHidden = el('cc_hidden').checked;
