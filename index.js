@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.11.0';
+    const VERSION = '2.11.1';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -413,24 +413,53 @@
     }
 
     // Inspect the live ST state and report where Worldbooks live.
+    function wiFirstArray(cands) {
+        for (const v of cands) { if (Array.isArray(v) && v.length) return v.slice(); }
+        for (const v of cands) { if (Array.isArray(v)) return v.slice(); }
+        return null;
+    }
+
     function wiDiscover() {
         const c = ctx();
+        const W = (typeof window !== 'undefined') ? window : {};
+        const st = c.extensionSettings || c.extension_settings || W.extension_settings || {};
+        const powerUser = c.powerUserSettings || W.power_user || {};
         const out = { character: null, chat: null, globals: [], all: [] };
+        // Character-bound
         try {
             const ch = c.characters?.[c.characterId];
-            out.character = ch?.data?.extensions?.world || ch?.data?.world || null;
+            out.character = ch?.data?.extensions?.world || ch?.data?.world || ch?.world || null;
         } catch (e) { /* ignore */ }
+        // Chat-bound (metadata key is 'world_info')
         try {
             const md = c.chatMetadata || c.chat_metadata || {};
             const cw = md.world_info;
             if (typeof cw === 'string') out.chat = cw;
             else if (cw && typeof cw === 'object') out.chat = cw.world || cw.name || null;
         } catch (e) { /* ignore */ }
+        // Active GLOBAL selection \u2014 probe every known location
         try {
-            if (Array.isArray(c.world_names)) out.all = c.world_names.slice();
-            else if (typeof window !== 'undefined' && Array.isArray(window.world_names)) out.all = window.world_names.slice();
-            const sel = c.selected_world_info || (typeof window !== 'undefined' ? window.selected_world_info : null);
-            if (Array.isArray(sel)) out.globals = sel.slice();
+            const sel = wiFirstArray([
+                c.selected_world_info,
+                W.selected_world_info,
+                st.world_info?.globalSelect,
+                st.selected_world_info,
+                st.world_info,
+                powerUser.world_info?.globalSelect,
+            ]);
+            if (sel) out.globals = sel.map(x => (typeof x === 'string' ? x : (x && (x.name || x.world)))).filter(Boolean);
+        } catch (e) { /* ignore */ }
+        // All known book names
+        try {
+            const all = wiFirstArray([ c.world_names, W.world_names, st.world_names ]);
+            if (all) out.all = all.slice();
+        } catch (e) { /* ignore */ }
+        // Last resort: the loaded world_info object holds entries of active books; its keys hint at active books
+        try {
+            const wi = c.world_info || W.world_info;
+            if ((!out.globals || !out.globals.length) && wi && typeof wi === 'object') {
+                if (Array.isArray(wi.globalSelect) && wi.globalSelect.length) out.globals = wi.globalSelect.slice();
+            }
         } catch (e) { /* ignore */ }
         return out;
     }
@@ -448,7 +477,18 @@
         if (d.all.length) lines.push('\u2022 All known books: ' + d.all.join(', '));
         const suggestions = [...new Set([d.character, d.chat, ...d.globals].filter(Boolean))];
         if (suggestions.length) lines.push('\nSuggested to manage: ' + suggestions.join(', ') + '  (put these in Settings \u2192 Worldbook \u2192 book names)');
-        else lines.push('\nNo bound book auto-detected. Open ST\'s World Info panel, note the book name, and type it into Settings \u2192 Worldbook.');
+        else if (d.all.length) lines.push('\nCould not read the ACTIVE selection on this ST build, but these books exist \u2014 copy the one you want into Settings \u2192 Worldbook: ' + d.all.join(', '));
+        else lines.push('\nCould not auto-detect. Open ST\'s World Info panel, copy the exact book name shown in the selector, and paste it into Settings \u2192 Worldbook. (Detection can fail on some ST builds \u2014 typing the name manually always works.)');
+        // Verify the chosen book(s) actually load, since that is what matters for editing.
+        const chosen = wiChosenBooks();
+        if (chosen.length) {
+            lines.push('');
+            for (const b of chosen) {
+                const data = await wiLoad(b);
+                if (data) lines.push('\u2713 "' + b + '" loads OK (' + wiEntryList(data).length + ' entries) \u2014 the copilot can read & edit it.');
+                else lines.push('\u2717 "' + b + '" did NOT load \u2014 check the exact spelling against ST\'s World Info selector.');
+            }
+        }
         const txt = lines.join('\n');
         addBubble('note', txt);
         pushHistory('note', txt);
