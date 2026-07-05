@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.13.0';
+    const VERSION = '2.14.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -645,6 +645,7 @@
                 setSecondaryKeys: Array.isArray(o.set_secondary_keys) ? o.set_secondary_keys.map(String) : (Array.isArray(o.keysecondary) ? o.keysecondary.map(String) : null),
                 newEntry: !!o.new_entry,
                 deleteEntry: !!(o.delete_entry || o.delete),
+                createBook: !!(o.create_book || o.new_book),
                 comment: o.comment !== undefined ? String(o.comment) : null,
                 status_type: o.status !== undefined && ['normal','constant','vectorized'].includes(String(o.status)) ? String(o.status) : null,
                 constant: o.constant,
@@ -694,7 +695,50 @@
         if (edit.role !== null && edit.role !== undefined) entry.role = edit.role;
     }
 
+    async function wiCreateBook(name, firstEntry) {
+        const c = ctx();
+        const clean = String(name || '').trim();
+        if (!clean) return { ok: false, reason: 'book name required' };
+        // Refuse if it already exists (avoid clobbering).
+        try {
+            const existing = await c.loadWorldInfo(clean);
+            if (existing && existing.entries) return { ok: false, reason: 'a book named "' + clean + '" already exists' };
+        } catch (e) { /* not found = good */ }
+        const data = { entries: {} };
+        if (firstEntry && (firstEntry.content || firstEntry.comment)) {
+            data.entries['0'] = {
+                uid: 0, key: Array.isArray(firstEntry.keys) ? firstEntry.keys.map(String) : [], keysecondary: [],
+                comment: String(firstEntry.comment || 'Entry'), content: String(firstEntry.content || ''),
+                constant: !!firstEntry.constant, vectorized: false, selective: true, order: 100, position: 0,
+                disable: false, addMemo: true, excludeRecursion: false, probability: 100, useProbability: true,
+                group: '', groupOverride: false, scanDepth: null, caseSensitive: null, matchWholeWords: null,
+                automationId: '', role: null, sticky: 0, cooldown: 0, delay: 0, depth: 4,
+            };
+        }
+        const ok = await wiSave(clean, data);
+        if (!ok) return { ok: false, reason: 'save failed' };
+        // Register in the global "Active World(s)" selection so it takes effect.
+        try {
+            const el = (typeof document !== 'undefined') && document.getElementById('world_info');
+            if (el && !Array.from(el.options).some(o => (o.textContent || '').trim() === clean)) {
+                try { c.updateWorldInfoList?.(); } catch (e) { /* ignore */ }
+            }
+            // Try the slash command to select it globally (most reliable cross-version).
+            if (typeof c.executeSlashCommandsWithOptions === 'function') {
+                await c.executeSlashCommandsWithOptions('/world silent=true ' + clean);
+            } else if (typeof c.executeSlashCommands === 'function') {
+                await c.executeSlashCommands('/world silent=true ' + clean);
+            }
+        } catch (e) { console.warn(LOG, 'book activation note', e); }
+        return { ok: true, created: clean };
+    }
+
     async function applyWiOne(edit) {
+        if (edit.createBook) {
+            const res = await wiCreateBook(edit.book, edit.hasContent || edit.comment ? { keys: edit.setKeys, comment: edit.comment, content: edit.replace, constant: edit.status_type === 'constant' } : null);
+            if (!res.ok) return { ok: false, reason: res.reason };
+            return { ok: true, book: edit.book, before: { __newbook: edit.book }, path: 'NEW BOOK "' + edit.book + '"' + (edit.hasContent || edit.comment ? ' + first entry' : '') };
+        }
         const data = await wiLoad(edit.book);
         if (!data) return { ok: false, reason: 'book "' + edit.book + '" not found' };
         const before = JSON.parse(JSON.stringify(data));
@@ -878,6 +922,7 @@
         '{"book":"Name","uid":3,"set_keys":["a","b"],"reason":".."} \u2014 update trigger keywords.',
         '{"book":"Name","new_entry":true,"comment":"Title","keys":["k"],"content":"..","status":"normal","reason":".."} \u2014 add an entry.',
         '{"book":"Name","uid":3,"delete_entry":true,"reason":".."} \u2014 permanently remove an entry (reversible via Undo). Use only when the user asks to delete, or an entry is a genuine duplicate/obsolete \u2014 never delete lore just to tidy.',
+        '{"book":"New Book Name","create_book":true,"comment":"Title","keys":["k"],"content":"..","reason":".."} \u2014 create a brand-NEW lorebook file (comment/keys/content optionally seed a first entry; status:"constant" makes it always-on). Use ONLY when the user explicitly wants a SEPARATE new book. To add lore to the existing active book instead, use new_entry.',
         'You can also set entry CONFIG (include only the fields you want to change):',
         '  "comment":"new title" \u2014 rename the entry (organizational label only; NOT sent to the story).',
         '  "status":"constant"|"normal"|"vectorized".',
@@ -1574,7 +1619,13 @@
                 continue;
             }
             if (item.kind === 'wi') {
-                await wiSave(item.book, item.before);
+                if (item.before && item.before.__newbook) {
+                    // Undo of a created book: empty it (best effort \u2014 ST keeps no getContext book-delete).
+                    await wiSave(item.book, { entries: {} });
+                    memRestored = false;
+                } else {
+                    await wiSave(item.book, item.before);
+                }
                 continue;
             }
             const msg = c.chat?.[item.id];
@@ -2890,7 +2941,7 @@
             const who = (isMem || isWi) ? '' : (msg ? (msg.is_user ? 'USER' : (msg.name || 'AI')) : '?');
             let label, wiDetail = '';
             if (isWi) {
-                const act = edit.deleteEntry ? ('\uD83D\uDDD1 delete #' + edit.uid) : (edit.newEntry ? 'new entry' : ('edit #' + edit.uid));
+                const act = edit.createBook ? '\uD83D\uDCD5 CREATE BOOK' : (edit.deleteEntry ? ('\uD83D\uDDD1 delete #' + edit.uid) : (edit.newEntry ? 'new entry' : ('edit #' + edit.uid)));
                 label = '\uD83C\uDF10 ' + esc(act);
                 wiDetail = esc(edit.book);
             } else {
@@ -2906,7 +2957,7 @@
             const card = document.createElement('div');
             card.className = 'cc_card';
             const findShown = isWi
-                ? (edit.deleteEntry ? '\u26A0 DELETE this entry permanently (Undo restores it)' : (edit.newEntry ? '(new entry: ' + (edit.comment || '') + ')' : (edit.setKeys ? '(set keys: ' + edit.setKeys.join(', ') + ')' : (edit.find == null ? '(replace entry content)' : edit.find))))
+                ? (edit.createBook ? '(create new lorebook "' + edit.book + '"' + (edit.hasContent || edit.comment ? ' with a first entry' : ' empty') + ')' : (edit.deleteEntry ? '\u26A0 DELETE this entry permanently (Undo restores it)' : (edit.newEntry ? '(new entry: ' + (edit.comment || '') + ')' : (edit.setKeys ? '(set keys: ' + edit.setKeys.join(', ') + ')' : (edit.find == null ? '(replace entry content)' : edit.find)))))
                 : (!isMem && edit.hide !== null && edit.hide !== undefined)
                 ? (edit.hide ? '(hide message from AI context \u2014 text stays in log)' : '(unhide message)')
                 : edit.find == null
