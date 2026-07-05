@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.10.0';
+    const VERSION = '2.11.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -762,12 +762,27 @@
         '{"book":"Name","uid":3,"set_keys":["a","b"],"reason":".."} \u2014 update trigger keywords.',
         '{"book":"Name","new_entry":true,"comment":"Title","keys":["k"],"content":"..","status":"normal","reason":".."} \u2014 add an entry.',
         'You can also set entry CONFIG (include only the fields you want to change):',
-        '  "comment":"new title" \u2014 rename the entry.',
-        '  "status":"constant"|"normal"|"vectorized" \u2014 constant=\uD83D\uDD35 always-on; normal=\uD83D\uDFE2 keyword-triggered; vectorized=\uD83D\uDD17 semantic/keyless.',
+        '  "comment":"new title" \u2014 rename the entry (organizational label only; NOT sent to the story).',
+        '  "status":"constant"|"normal"|"vectorized".',
         '  "position":"before_char"|"after_char"|"an_top"|"an_bottom"|"at_depth", plus "depth":N when position is at_depth.',
-        '  "order":N (insertion priority, higher = later/stronger), "trigger":N (activation probability %, 0-100).',
-        '  "set_keys":[..] primary keywords, "set_secondary_keys":[..], "disable":true/false.',
-        'Only edit the Worldbook when asked or when fixing a real continuity error. Keep [WORLDBOOK] and [STORY MEMORY] consistent with each other. Change config fields only when the user asks or an entry is clearly misconfigured (e.g. lore that should be always-on is keyword-gated).',
+        '  "order":N, "trigger":N (0-100), "set_keys":[..], "set_secondary_keys":[..], "disable":true/false.',
+        '',
+        'WHAT EACH SETTING MEANS (use this to judge whether an entry is in the CORRECT place / config):',
+        '\u2022 STATUS \u2014 how an entry activates. constant (\uD83D\uDD35): injected EVERY turn no matter what; costs tokens permanently; correct ONLY for always-relevant spine lore (core world rules, the ranking system, the current premise). normal (\uD83D\uDFE2, default): injected ONLY when one of its keywords appears in recent messages; correct for most entries \u2014 specific characters, places, factions, items that matter only when mentioned. vectorized (\uD83D\uDD17): keyless; activates by semantic similarity (needs the Vector Storage extension); correct for lore that should surface by topic even when the exact keyword is not spoken.',
+        '\u2022 KEYS \u2014 the trigger words for normal entries. An entry only fires if a key literally appears in the scanned text. Keys must cover the ways the subject is actually referred to (name + aliases + epithets). MISSING keys = the entry silently never fires. Only content is sent to the model; keys and title are not.',
+        '\u2022 POSITION \u2014 where in the prompt the content is inserted. before_char / after_char sit around the character definition (good for background lore). an_top / an_bottom ride with the Author\'s Note. at_depth + depth:N injects N messages deep in the chat (depth 0 = very bottom / most recent); low depth = the model weighs it more heavily and immediately. Use at_depth low for rules that must be obeyed RIGHT NOW; use before/after_char for ambient background.',
+        '\u2022 ORDER \u2014 tie-break priority when several entries are inserted at the same spot; higher order is placed later (closer to the prompt end = usually more influence). Raise it for entries that must win over competing lore.',
+        '\u2022 TRIGGER % \u2014 activation probability. 100 = always fires when keys match (correct for lore). Below 100 = random chance; only for flavor/variety entries, never for hard canon.',
+        '\u2022 DISABLE \u2014 entry is off entirely.',
+        '',
+        'AUDIT HEURISTICS \u2014 flag an entry as MISCONFIGURED when:',
+        '  \u2013 It is spine/always-relevant lore but status is normal or keyworded (should be constant), OR it is niche lore but status is constant (wasting tokens every turn \u2014 should be normal).',
+        '  \u2013 A normal entry\'s keys omit obvious aliases/epithets the story uses for that subject (it will silently fail to fire). Propose set_keys adding them.',
+        '  \u2013 A must-obey rule sits at before/after_char or high depth where the model underweights it (consider at_depth with low depth), or trivial background sits at low depth crowding recent context.',
+        '  \u2013 trigger < 100 on canonical lore (should be 100).',
+        '  \u2013 Content contradicts [STORY MEMORY], the ledger, or the chat \u2014 fix the content.',
+        '  \u2013 Duplicate/overlapping entries competing for the same subject with conflicting order.',
+        'Report WHY an entry is misconfigured and what the correct setting is. Do NOT churn config that is already reasonable \u2014 only propose a change you can justify. When the user asks \u201Cis this the right place/settings?\u201D, walk the entry against these heuristics and answer plainly, proposing wiedits only where a real problem exists.',
     ].join('\n');
 
     function sysPrompt() {
