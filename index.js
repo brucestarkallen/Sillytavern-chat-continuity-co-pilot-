@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.11.3';
+    const VERSION = '2.11.4';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -382,8 +382,36 @@
         return String(settings.wiBooks || '').split(',').map(x => x.trim()).filter(Boolean);
     }
 
+    // Read the "Active World(s) for all chats" <select id="world_info"> dropdown directly.
+    function wiReadSelectDom() {
+        const out = { all: [], active: [] };
+        try {
+            if (typeof document === 'undefined') return out;
+            const el = document.getElementById('world_info');
+            if (!el || !el.options) return out;
+            for (const opt of el.options) {
+                const name = String(opt.textContent || opt.text || '').trim();
+                if (!name) continue;
+                out.all.push(name);
+                if (opt.selected) out.active.push(name);
+            }
+        } catch (e) { /* ignore */ }
+        return out;
+    }
+
+    // Books the copilot will actually manage: manual list if given, else the active dropdown selection.
+    function wiEffectiveBooks() {
+        const manual = wiChosenBooks();
+        if (manual.length) return manual;
+        try {
+            const dom = wiReadSelectDom();
+            if (dom.active.length) return dom.active;
+        } catch (e) { /* ignore */ }
+        return [];
+    }
+
     function wiActive() {
-        return !!settings.wiEnable && wiApiAvailable() && wiChosenBooks().length > 0;
+        return !!settings.wiEnable && wiApiAvailable() && wiEffectiveBooks().length > 0;
     }
 
     async function wiLoad(book) {
@@ -454,12 +482,11 @@
             const all = wiFirstArray([ c.world_names, W.world_names, st.world_names ]);
             if (all) out.all = all.slice();
         } catch (e) { /* ignore */ }
-        // Last resort: the loaded world_info object holds entries of active books; its keys hint at active books
+        // AUTHORITATIVE: read the visible "Active World(s)" <select id=world_info> dropdown.
         try {
-            const wi = c.world_info || W.world_info;
-            if ((!out.globals || !out.globals.length) && wi && typeof wi === 'object') {
-                if (Array.isArray(wi.globalSelect) && wi.globalSelect.length) out.globals = wi.globalSelect.slice();
-            }
+            const dom = wiReadSelectDom();
+            if (dom.all.length && !out.all.length) out.all = dom.all;
+            if (dom.active.length) out.globals = dom.active;
         } catch (e) { /* ignore */ }
         return out;
     }
@@ -475,10 +502,17 @@
         lines.push('\u2022 Chat-bound: ' + (d.chat || '(none)'));
         lines.push('\u2022 Active global(s): ' + (d.globals.length ? d.globals.join(', ') : '(none/undetectable)'));
         if (d.all.length) lines.push('\u2022 All known books: ' + d.all.join(', '));
-        const suggestions = [...new Set([d.character, d.chat, ...d.globals].filter(Boolean))];
-        if (suggestions.length) lines.push('\nSuggested to manage: ' + suggestions.join(', ') + '  (put these in Settings \u2192 Worldbook \u2192 book names)');
-        else if (d.all.length) lines.push('\nCould not read the ACTIVE selection on this ST build, but these books exist \u2014 copy the one you want into Settings \u2192 Worldbook: ' + d.all.join(', '));
-        else lines.push('\nCould not auto-detect. Open ST\'s World Info panel, copy the exact book name shown in the selector, and paste it into Settings \u2192 Worldbook. (Detection can fail on some ST builds \u2014 typing the name manually always works.)');
+        const manual = wiChosenBooks();
+        const eff = wiEffectiveBooks();
+        if (manual.length) {
+            lines.push('\nManaging (from settings): ' + manual.join(', '));
+        } else if (eff.length) {
+            lines.push('\n\u2705 Auto-using the ACTIVE book(s) from your dropdown: ' + eff.join(', ') + '  \u2014 no setup needed. (To pin a specific book instead, type its name in Settings \u2192 Worldbook.)');
+        } else if (d.all.length) {
+            lines.push('\nBooks available: ' + d.all.join(', ') + '. Select one in ST\'s \u201CActive World(s)\u201D dropdown, or type its name in Settings \u2192 Worldbook.');
+        } else {
+            lines.push('\nNo books found. Open ST\'s World Info panel and select a book, or type its name in Settings \u2192 Worldbook.');
+        }
         // Raw inspection \u2014 dump what actually exists so detection can be fixed with facts.
         try {
             const pc = ctx();
@@ -509,7 +543,7 @@
             pushHistory('note', diag);
         } catch (e) { addBubble('note', 'probe error: ' + (e && e.message)); }
         // Verify the chosen book(s) actually load, since that is what matters for editing.
-        const chosen = wiChosenBooks();
+        const chosen = wiEffectiveBooks();
         if (chosen.length) {
             lines.push('');
             for (const b of chosen) {
@@ -526,7 +560,7 @@
     async function wiBuildContext() {
         // Returns a [WORLDBOOK] block for the pilot's context, respecting mode.
         if (!wiActive()) return '';
-        const books = wiChosenBooks();
+        const books = wiEffectiveBooks();
         const full = !!settings.wiFull;
         const parts = [];
         for (const book of books) {
@@ -597,7 +631,7 @@
         const edits = [];
         for (const o of arr) {
             if (!o || typeof o !== 'object') continue;
-            const book = String(o.book || (wiChosenBooks()[0] || '')).trim();
+            const book = String(o.book || (wiEffectiveBooks()[0] || '')).trim();
             if (!book) continue;
             void 0;
             const hasContent = (o.replace !== undefined) || (o.replace_content !== undefined) || (o.content !== undefined);
