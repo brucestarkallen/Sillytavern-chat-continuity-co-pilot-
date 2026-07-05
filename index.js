@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.7.1';
+    const VERSION = '2.8.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -76,6 +76,7 @@
         '- Messages you hid are remembered in a ledger even if another extension later makes them visible again (the index will note this). If the user asks to "re-hide my OOC", emit hide edits for every id in that note.',
         '- In explanations, refer to blocks WITHOUT angle brackets (write "edits block", "memedits block", "fetch"). The literal tags must appear ONLY wrapping the actual JSON, never inside prose.',
         '- Anchors ("find") must be UNIQUE within their target message \u2014 the applier REJECTS ambiguous anchors. When in doubt, extend the excerpt a few words on each side.',
+        '- The user can discuss your proposals before applying them. If they ask you to reconsider or refine an edit, simply propose the improved version in a new edits/memedits block \u2014 it is added to the staging area alongside the earlier ones so they can compare and pick. You do not need to resend unchanged proposals.',
     ].join('\n');
 
     const AUDIT_PROMPT = 'Audit the whole chat against [STORY MEMORY]. Look for continuity and logic errors: wrong locations, wrong character knowledge (information quarantine breaks), timeline contradictions, dropped or duplicated plot state. Fetch full messages if you need them, then list what you found and propose fixes in an <edits> block, plus <memedits> wherever the memory itself is wrong.';
@@ -1386,7 +1387,14 @@
             if (allEdits.length) {
                 editsCollapsed = false;
                 stampReviewState(allEdits);
-                pendingEdits = allEdits;
+                const batchNo = (pendingEdits.reduce((mx, e) => Math.max(mx, e.batch || 0), 0)) + 1;
+                allEdits.forEach(e => { e.batch = batchNo; });
+                if (pendingEdits.length) {
+                    pendingEdits = pendingEdits.concat(allEdits);
+                    addBubble('note', '\u2795 ' + allEdits.length + ' new proposal(s) added below your ' + (pendingEdits.length - allEdits.length) + ' still-pending one(s). Review all together, or Dismiss to clear.');
+                } else {
+                    pendingEdits = allEdits;
+                }
                 renderEditCards();
             }
         } catch (err) {
@@ -1429,6 +1437,7 @@
             editsCollapsed = false;
             const swiped = [...pe.edits, ...pm.edits];
             stampReviewState(swiped);
+            swiped.forEach(e => { e.batch = 1; });
             pendingEdits = swiped;
             renderEditCards();
             return;
@@ -2372,6 +2381,10 @@
         updateSub();
     }
 
+    function batchLabel(n) {
+        return n > 1 ? ('Batch ' + n) : 'Proposed';
+    }
+
     function renderEditCards() {
         const box = el('cc_edits');
         if (!box) return;
@@ -2395,11 +2408,20 @@
         const list = document.createElement('div');
         if (editsCollapsed) list.style.display = 'none';
 
+        const maxBatch = pendingEdits.reduce((mx, e) => Math.max(mx, e.batch || 1), 1);
+        let lastBatch = null;
         pendingEdits.forEach((edit, idx) => {
             const isMem = edit.kind === 'mem';
             const msg = isMem ? null : chat[edit.id];
             const who = isMem ? '' : (msg ? (msg.is_user ? 'USER' : (msg.name || 'AI')) : '?');
             const label = isMem ? 'MEMORY' : ('#' + edit.id + ' ' + esc(who));
+            if (maxBatch > 1 && (edit.batch || 1) !== lastBatch) {
+                lastBatch = edit.batch || 1;
+                const div = document.createElement('div');
+                div.style.cssText = 'font-size:0.75em;opacity:0.6;margin:6px 0 3px;text-transform:uppercase;letter-spacing:0.05em;';
+                div.textContent = batchLabel(lastBatch) + (lastBatch === maxBatch ? ' (newest)' : '');
+                list.appendChild(div);
+            }
             const card = document.createElement('div');
             card.className = 'cc_card';
             const findShown = (!isMem && edit.hide !== null && edit.hide !== undefined)
