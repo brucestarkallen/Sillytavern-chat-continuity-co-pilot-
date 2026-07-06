@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.14.1';
+    const VERSION = '2.15.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -133,6 +133,7 @@
         ledgerDepth: 6,
         ledgerWindow: 20,
         ledgerInject: true,
+        ledgerAutoSeed: false,
         shortcuts: DEFAULT_SHORTCUTS,
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
     };
@@ -2529,6 +2530,7 @@
             '          <button class="cc_btn" id="cc_critpeek" style="display:block;width:100%;margin:3px 0;text-align:left;" title="View or hand-edit the critique">\uD83D\uDCDD Peek critique</button>',
             '          <button class="cc_btn" id="cc_memcheck" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Show detected memory sources">\uD83E\uDDE0 Memory?</button>',
             '          <button class="cc_btn" id="cc_context" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Show the full context the copilot receives">\uD83D\uDCE6 Context</button>',
+            '          <button class="cc_btn" id="cc_ledger_build" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Build the whole character ledger from your full story memory (summaries + worldbook)">\uD83E\uDDEC Ledger: build from memory</button>',
             '          <button class="cc_btn" id="cc_ledger_now" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Run a character-ledger update pass now">\uD83E\uDDEC Ledger: update</button>',
             '          <button class="cc_btn" id="cc_ledger_peek" style="display:block;width:100%;margin:3px 0;text-align:left;" title="View or hand-edit the ledger JSON">\uD83E\uDDEC Ledger: peek/edit</button>',
             '          <button class="cc_btn" id="cc_ledger_restore" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Restore the most recent ledger backup">\uD83E\uDDEC Ledger: restore</button>',
@@ -2576,6 +2578,7 @@
         el('cc_dirpeek').addEventListener('click', () => peekDirective());
         el('cc_critique').addEventListener('click', () => generateCritique());
         el('cc_critpeek').addEventListener('click', () => peekCritique());
+        el('cc_ledger_build').addEventListener('click', () => runLedgerBootstrap(false));
         el('cc_ledger_now').addEventListener('click', () => runLedgerUpdate(false));
         el('cc_ledger_peek').addEventListener('click', () => ledgerPeek());
         el('cc_ledger_restore').addEventListener('click', () => ledgerRestore());
@@ -2652,6 +2655,7 @@
             '  <div><label>Ledger active window (msgs)</label><input type="number" id="cc_led_win" min="1" max="100"></div>',
             '</div>',
             '<div class="cc_check"><input type="checkbox" id="cc_led_inject"><span>Inject [CHARACTER CONTINUITY] into the storyteller</span></div>',
+            '<div class="cc_check"><input type="checkbox" id="cc_led_autoseed"><span>Auto-build the ledger from full memory when it is empty, then keep updating (needs a Connection Profile)</span></div>',
             '<div style="margin:10px 0 2px;font-weight:600;opacity:0.75;">Worldbook (World Info) \u2014 optional</div>',
             '<div class="cc_check"><input type="checkbox" id="cc_wi_enable"><span>Let the copilot see & edit Worldbook entries (off = ignored entirely)</span></div>',
             '<label>Book name(s) to manage (comma-separated; use \u201CWorldbook: detect\u201D in the \u22EE menu to find them)</label>',
@@ -2695,6 +2699,7 @@
         el('cc_led_depth').value = settings.ledgerDepth;
         el('cc_led_win').value = settings.ledgerWindow;
         el('cc_led_inject').checked = !!settings.ledgerInject;
+        el('cc_led_autoseed').checked = !!settings.ledgerAutoSeed;
         el('cc_wi_enable').checked = !!settings.wiEnable;
         el('cc_wi_books').value = settings.wiBooks || '';
         el('cc_wi_full').checked = !!settings.wiFull;
@@ -2727,6 +2732,7 @@
             settings.ledgerDepth = Number(el('cc_led_depth').value) || 6;
             settings.ledgerWindow = Math.max(1, Number(el('cc_led_win').value) || 20);
             settings.ledgerInject = el('cc_led_inject').checked;
+            settings.ledgerAutoSeed = el('cc_led_autoseed').checked;
             settings.wiEnable = el('cc_wi_enable').checked;
             settings.wiBooks = el('cc_wi_books').value;
             settings.wiFull = el('cc_wi_full').checked;
@@ -3281,6 +3287,87 @@
         } catch (e) { console.warn(LOG, 'ledger injection failed', e); }
     }
 
+    async function runLedgerBootstrap(isAuto) {
+        if (running) return;
+        const c = ctx();
+        if (!Array.isArray(c.chat)) return;
+        running = true;
+        setBusy(true);
+        const busyNote = addBubble('busy', (isAuto ? 'auto-' : '') + 'building character ledger from full story memory\u2026');
+        try {
+            // The whole compressed story lives in memory (PE + snippets + notes); add worldbook + the freshest messages.
+            let mem = gatherMemory();
+            let wb = '';
+            try { if (wiActive()) wb = await wiBuildContext(); } catch (e) { /* ignore */ }
+            const chat = c.chat || [];
+            const N = Math.max(0, Math.min(100, Number(settings.recentFull) || 8));
+            const rids = [];
+            for (let i = Math.max(0, chat.length - N); i < chat.length; i++) rids.push(i);
+            const recent = rids.length ? fullTextOf(rids) : '';
+
+            // Keep total input inside the model's context; the memory HEAD (plot-essential) is the highest-value part.
+            const CAP = 120000;
+            const reserve = wb.length + recent.length + 3000;
+            let truncated = false;
+            if (mem.length + reserve > CAP) { mem = mem.slice(0, Math.max(2000, CAP - reserve)); truncated = true; }
+
+            const existing = ledgerGet();
+            const hasExisting = !!(existing && existing.characters && Object.keys(existing.characters).length);
+            const sys = [
+                'You are BUILDING a comprehensive CHARACTER LEDGER for a long-form roleplay from its ENTIRE accumulated story memory (compressed summaries, plot-essential notes' + (wb ? ', worldbook lore' : '') + ') plus the most recent messages.',
+                'Capture EVERY character who matters \u2014 the protagonist, recurring cast, and significant NPCs \u2014 with their CURRENT qualitative state as of the latest events, not their debut state.',
+                'Output ONLY a block: <ledgerops>[ ...ops... ]</ledgerops> \u2014 a STRICT JSON array using these ops:',
+                '{"op":"upsert_char","name":"..","state":"1-2 line current qualitative state"}',
+                '{"op":"add_arc","name":"..","atTurn":123,"note":"a MAJOR turning point, one line"}',
+                '{"op":"set_relationship","name":"..","target":"..","label":"e.g. rivals\u2192grudging allies","trend":"warming|cooling|stable","sinceTurn":123}',
+                '{"op":"set_knowledge","name":"..","knows":["fact they know"],"doesNotKnow":["secret kept from them"]}',
+                '{"op":"merge_alias","name":"CanonicalName","alias":"Nickname"}',
+                'Rules: qualitative continuity ONLY \u2014 never numeric stats (P/R/S etc.). Use each character\'s canonical full name as "name" and fold nicknames/epithets in with merge_alias so the same person is never duplicated. The knowledge fields are the HARD information-quarantine boundaries \u2014 record what each character does and does NOT know. For arcs, log only genuine turning points, not every scene. Build only from what the memory establishes \u2014 never invent. One entry per real character is expected; a near-empty array means the memory was thin.',
+                hasExisting ? 'An EXISTING ledger is provided \u2014 augment and correct it, keeping its canonical names; upserts are idempotent so re-emitting a character is safe.' : 'You are building from scratch.',
+            ].join('\n');
+            let user = '[FULL STORY MEMORY]\n' + mem + (truncated ? '\n\n(memory was large and has been truncated to fit \u2014 oldest detail may be missing)' : '');
+            if (wb) user += '\n\n[WORLDBOOK]\n' + wb;
+            if (recent) user += '\n\n[MOST RECENT MESSAGES]\n' + recent;
+            if (hasExisting) user += '\n\n[EXISTING LEDGER \u2014 augment/correct, keep canonical names]\n' + JSON.stringify(existing);
+            user += '\n\nBuild the ledger now. Emit ONLY the ledgerops block.';
+
+            let sp = await callLLMSmart([{ role: 'system', content: sys }, { role: 'user', content: user }]);
+            if (stopRequested) { addBubble('note', 'Stopped \u2014 ledger unchanged.'); return; }
+            let b = findBlock(sp.rest, 'ledgerops');
+            let ops = null;
+            try { ops = b ? JSON.parse(b.inner.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')) : null; } catch (e) { ops = null; }
+            if (!Array.isArray(ops)) {
+                sp = await callLLMSmart([
+                    { role: 'system', content: sys },
+                    { role: 'user', content: user },
+                    { role: 'assistant', content: sp.rest.slice(0, 4000) || '(no answer \u2014 all reasoning)' },
+                    { role: 'user', content: 'That was not a valid ledgerops JSON array. Resend ONLY the <ledgerops>[...]</ledgerops> block with valid JSON, minimal deliberation.' },
+                ]);
+                if (stopRequested) { addBubble('note', 'Stopped \u2014 ledger unchanged.'); return; }
+                b = findBlock(sp.rest, 'ledgerops');
+                try { ops = b ? JSON.parse(b.inner.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')) : null; } catch (e) { ops = null; }
+            }
+            if (!Array.isArray(ops)) { toast('\uD83E\uDDEC Ledger build failed to parse \u2014 unchanged.', 'error'); addBubble('note', '\uD83E\uDDEC Ledger build failed to parse twice \u2014 unchanged. Try again, or raise Max output tokens.'); return; }
+            const before = JSON.parse(JSON.stringify(ledgerGet()));
+            ledgerBackup();
+            const counts = applyLedgerOps(ops);
+            ledgerGet().lastProcessedTurn = c.chat.length - 1;
+            undoStack.push({ label: 'ledger build from memory', items: [{ kind: 'mem', key: LEDGER_KEY, before }] });
+            saveMeta();
+            applyLedgerInjection();
+            const total = Object.keys(ledgerGet().characters).length;
+            const note = '\uD83E\uDDEC Ledger built from full memory' + (isAuto ? ' (auto)' : '') + ': ' + total + ' character(s) total \u2014 ' + counts.rel + ' relationship(s), ' + counts.arc + ' arc note(s), ' + counts.know + ' knowledge set(s)' + (counts.created.length ? ' \u2014 new: ' + counts.created.slice(0, 12).join(', ') + (counts.created.length > 12 ? '\u2026' : '') : '') + '.' + (truncated ? ' (Memory was capped \u2014 if any cast is missing, trim memory and run again.)' : '') + ' Undo restores. Ongoing changes now update incrementally.';
+            addBubble('note', note);
+            pushHistory('note', note);
+        } catch (err) {
+            addBubble('note', 'Ledger build error: ' + (err?.message || err));
+        } finally {
+            busyNote.remove();
+            running = false;
+            setBusy(false);
+        }
+    }
+
     async function runLedgerUpdate(isAuto) {
         if (running) return;
         const c = ctx();
@@ -3352,7 +3439,11 @@
             if (!settings.profileId) return;
             m.ledgerAutoCount = 0;
             saveMeta();
-            runLedgerUpdate(true);
+            if (settings.ledgerAutoSeed && !Object.keys(ledgerGet().characters || {}).length) {
+                runLedgerBootstrap(true);
+            } else {
+                runLedgerUpdate(true);
+            }
         } catch (e) { /* ignore */ }
     }
 
