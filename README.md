@@ -1,123 +1,86 @@
-# Continuity Copilot (SillyTavern extension)
+# Chat Assistant (SillyTavern extension)
 
-A lightweight chat panel inside SillyTavern where you talk to a "fixer" AI that can **directly edit your chat messages** to repair continuity errors.
+A floating AI panel inside SillyTavern where you talk to a **second "assistant" model** that can surgically edit your story — chat messages, memory, and worldbook — to keep a long roleplay consistent, and that also runs two autonomous showrunner systems (a hidden **Director** and a standing **Editor**) to keep the storytelling sharp.
 
-Example: at turn 30 you notice the AI put Jillian on a train when she is at the academy. Open the panel, type:
+> Formerly "Continuity Copilot." Inspired by the concept of **ST-Copilot** (MIT, github.com/Supker/St-Copilot), but the code here is original and the scope has grown far past a chat manager: this is a continuity auditor, co-writer, and editor in one.
 
-> wait, why is Jillian on the train? she's at the academy — fix it
+## The one-line idea
 
-The copilot reads your story memory + chat, proposes exact find/replace edits with a red/green preview, and applies them to the real chat log when you press Apply. One-click Undo included.
+Instead of hand-editing your chat log and juggling separate tools for memory and worldbook, you get **one assistant that sees all your story data at once and edits it surgically** — with a red/green diff preview, fuzzy matching so it doesn't have to quote perfectly, and one-click Undo for everything. Keeping those stores mutually consistent is the whole point.
 
-Built as a minimal alternative to ST-Copilot's chat manager: no sessions, no themes, no stats — just the fixer.
+It runs on a **separate Connection Profile** (never your main roleplay model), so auditing never touches story generation.
 
-## How it sees your story
+## What it can do
 
-Every request to the copilot includes:
+**Talk to it in plain language.** *"Why is Jillian on the train? She's at the academy — fix it."* It reads your memory + chat, proposes exact find/replace edits as cards, and applies them on Apply.
 
-1. **[STORY MEMORY]** — the live prompt injections from your memory extensions. It grabs every registered extension prompt whose key matches a regex (default: `summar|ception|memory|qvink`), which is exactly what Summaryception injects (snippets, audit), plus matching keys from chat metadata, plus the **Author's Note** (both the chat metadata value and the injected `2_floating_prompt`) — so notes kept in the Author's Note are visible too. Press the **Memory?** button in the panel to see exactly what it detected.
-2. **[MESSAGE INDEX]** — one line per message: `#id [speaker] preview`. Ghosted/hidden messages are EXCLUDED by default (their content is represented by the snippets; a 200-message index would waste tokens). A settings toggle re-includes them, and the copilot can still fetch a ghosted message by id if you ask.
-3. **[FULL MESSAGES]** — the last N messages in full (default 8, configurable).
+**Edit three data stores, kept consistent:**
+- **Chat messages** — find/replace or whole-message rewrites, hide/unhide (OOC cleanup).
+- **Memory** — your Summaryception (or other memory-extension) data: the Plot-Essential notepad and summary snippets, via find/replace or whole-field replace.
+- **Worldbook (World Info)** — read, create, edit, delete entries plus their keys and config, all from chat.
 
-If the copilot needs older messages in full, it replies with `<fetch>[12, 13]</fetch>` and the extension automatically sends those and re-asks (up to "Fetch rounds" times). This keeps token cost low even in long chats.
+**Shortcut commands** (type the tag; all editable in settings):
+- `#f` — check the chat against memory and fix continuity errors.
+- `#s` — check the current session against memory.
+- `#m` — audit the memory itself for internal contradictions.
+- `#a` — fidelity audit: do the memory snippets match what actually happened?
+- `#o` — harvest OOC/meta asides from the chat and hide them.
+- `#i` — brainstorm distinct directions for what happens next.
+- `#p` — psychology read of a character: drives, contradictions, consistency vs. canon, likely next move.
+- `#d <text>` — steer the Director.
+
+**Two autonomous systems** (opt-in, run on a cadence on the assistant's profile, never on your main model):
+- **Director** — writes secret per-episode directives (hidden `[EPISODE_END]` markers, auto-chaining) that give NPCs and the world their own initiative and give pacing an arc, injected into your storyteller so the world acts *on* the protagonist.
+- **Editor** — standing craft notes injected each turn that correct systemic weaknesses (scenes circling the protagonist, characters/props vanishing, dead ambient world, stale pacing).
+
+**Chat-file naming** — *Auto-name this chat* reads the thread and suggests a distinctive title so branches/checkpoints are tellable apart; *Rename this chat* for a manual name. (Uses ST's `/renamechat`.)
+
+**Safety net** — *Reset ALL settings to defaults* restores the tested baseline in one click (keeps your Connection Profile; never touches chats or memory).
+
+**Everything is undoable** — chat, memory, and worldbook edits each push a typed Undo entry that restores byte-for-byte.
+
+## How it sees your story (context built per request)
+
+1. **[STORY MEMORY]** — every registered memory-extension prompt whose key matches a regex (default `summar|ception|memory|qvink`, i.e. what Summaryception injects), plus matching chat-metadata keys, plus the Author's Note.
+2. **[MESSAGE INDEX]** — one line per message (`#id [speaker] preview`); hidden/ghosted messages excluded by default.
+3. **[FULL MESSAGES]** — the last N messages in full (default 8).
+
+If it needs older messages it replies with `<fetch>[12, 13]</fetch>`; the extension auto-sends those and re-asks (up to "Fetch rounds" times), keeping token cost low in long chats.
 
 ## How edits work
 
-The copilot proposes edits in a strict block:
+The assistant proposes a strict block, e.g.:
 
 ```
 <edits>
-[
-  {"id": 27, "find": "she watched the countryside blur past the train window", "replace": "she watched the academy courtyard from the dormitory window", "reason": "Jillian is at the academy per PE"}
-]
+[{"id": 27, "find": "she watched the countryside blur past", "replace": "she watched the academy courtyard", "reason": "Jillian is at the academy"}]
 </edits>
 ```
 
-The extension parses this into cards (red = before, green = after) with Apply / Skip / Apply all. Applying:
+parsed into red/green cards with Apply / Skip / Apply-all / edit. Matching is exact -> quote-normalized -> fuzzy word-window Levenshtein (78% threshold), so a slight misquote still lands. Omitting `find` replaces the whole message. Memory uses `<memedits>`; worldbook uses `<wiedits>` / `<wifetch>`; each with the same diff-card + Undo flow.
 
-- exact substring match first, then a quote-normalized match, then a fuzzy word-window Levenshtein match (threshold 78%) if the model slightly misquoted the original;
-- omitting `"find"` replaces the entire message;
-- the previous version is backed up into `message.extra.cc_backups` (last 3 kept) and onto an in-session Undo stack;
-- the chat is saved and `MESSAGE_EDITED` / `MESSAGE_UPDATED` events are emitted — so extensions that re-summarize on edit will react.
+## How it differs from ST-Copilot (the inspiration)
 
-**Important:** after editing old messages, your Summaryception snippets covering those turns may still contain the old (wrong) fact and will re-inject the contradiction. Regenerate the affected snippets (or run your audit flow) after applying edits.
+ST-Copilot is a broad chat manager (sessions, themes, stats, and more). Chat Assistant took the "AI that edits your chat" idea in a different direction: **original code, focused entirely on continuity and craft**, then extended into memory + worldbook editing, the Director and Editor showrunner systems, character-psychology analysis, and chat-file naming. It's designed to sit *alongside* a memory extension (like Summaryception), not replace it: **memory holds the developmental record; this assistant audits, repairs, and directs.**
 
-## Install
+## For a future maintainer (architecture at a glance)
 
-Option A — extension installer (recommended):
-1. Put this folder in a GitHub repo (e.g. `continuity-copilot` with `manifest.json` at the repo root).
-2. SillyTavern → Extensions (stacked blocks icon) → **Install extension** → paste the repo URL.
+- **Single IIFE, no imports** — everything via `SillyTavern.getContext()`. Inits on `APP_READY` + a `setTimeout` fallback, guarded by an `inited` flag.
+- **Storage:** settings live in `extensionSettings.continuityCopilot`; per-chat state (director, hidden-message ledger, session history) in `chatMetadata.continuityCopilot`. **`continuityCopilot` is the internal MODULE id — do not rename it; that would orphan every user's saved settings and per-chat data.** Memory is *read* from other extensions, not owned here.
+- **LLM routing:** `ConnectionManagerRequestService.sendRequest(profileId, ...)` with a `generateRaw` fallback, wrapped in `callLLMSmart()`, which recovers from models that spend their whole budget "thinking" (feeds the reasoning back and demands the answer) and auto-continues cut-off blocks.
+- **Block parsing:** `findBlock(text, tag)` takes the LAST opening tag that has a closer and prefers JSON-leading content, so prose that merely names a tag doesn't break parsing. Tags: `fetch`, `edits`, `memedits`, `wifetch`, `wiedits`, `think`.
+- **Injections** (Director / Editor) are cleared and re-applied on `CHAT_CHANGED`; `[EPISODE_END]` markers are scrubbed from messages and swipes on load / receive / swipe.
+- **UI:** a floating, pointer-draggable panel with inline styles (mobile-safe); every mutation prints a receipt; version is stamped in the panel header and console.
+- **Target environment:** Android/Termux via a mobile browser — hence inline styles, `position:fixed` sizing, and native `prompt()`/`confirm()` for inputs. The `/cc` slash command and all `cc_*` identifiers are internal and unchanged by the display name.
 
-Option B — manual:
-1. Copy the `continuity-copilot` folder into `SillyTavern/data/<your-user>/extensions/` (or `public/scripts/extensions/third-party/` on older layouts).
-2. Restart SillyTavern / reload the page.
+## Setup
 
-## Setup & usage
+1. Install as a SillyTavern extension: **Extensions -> Install extension**, paste this repo's Git URL.
+2. Open the panel: wand menu -> **Chat Assistant**, or the `/cc` slash command.
+3. In the gear settings, pick a **Connection Profile** for the assistant (separate from your roleplay model) — required for it to run.
+4. Optional: enable the Director / Editor cadence, turn on the Worldbook bridge, tune the numbers.
 
-1. Open the wand menu (Extensions menu next to the chat input) → **Continuity Copilot**. Or type `/cc`.
-2. Gear icon → pick an **LLM route**:
-   - a Connection Profile (recommended — point it at a fast/cheap endpoint so it never touches your main RP connection), or
-   - "Current API" fallback (raw generation on whatever is connected).
-3. Type your complaint, or press **Audit chat** for a full continuity sweep.
-4. Review the edit cards → Apply. **Undo** reverts the last applied batch.
-5. **Memory?** opens a viewer listing every detected memory source by name (matched and skipped) plus the full memory text. **Context** opens the complete context block the copilot receives, with a char/token count — so you can see exactly what it knows and what's missing. Both have a Copy button.
+## Notes
 
-`/cc some request` opens the panel and sends the request in one step.
-
-## Shortcut commands
-
-Type a `#tag` as the first word in the panel input and it expands into a full prompt (editable in settings, one per line as `#tag = prompt`). Built-ins:
-
-- `#s` — **memory audit**: checks the CURRENT session (live messages) against Summaryception, then reports (1) things that happened in the chat but are missing from the snippets/audit/notes, and (2) memory entries that are stale or contradicted — each with the exact text to put into Summaryception. You copy the corrections into Summaryception yourself; the extension does not write into Summaryception's storage (needs the fork's schema; can be added later).
-- `#f` — **chat fix**: sweep the chat against story memory and propose an `<edits>` block for every continuity error.
-
-- `#i` — **ideas**: brainstorm 3-5 directions for what happens next, grounded in story memory.
-
-Anything typed after the tag is passed along as an extra instruction, e.g. `#s focus on Stella's injury timeline` or `#i something involving the academy festival`.
-
-## Not just repairs
-
-The copilot is a co-writer: ask it anything about the story — "give me ideas for the next arc", "what would this character realistically do here", "is this twist consistent with canon". It answers from the same full context (memory + chat), no edits involved unless you ask.
-
-## Running alongside ST-Copilot
-
-No conflict — you can keep ST-Copilot installed for its other features (lorebook/character managers, stats). But note its weight loads with the page even when its window is closed, so if SillyTavern feels slow, disable ST-Copilot in Manage Extensions and re-enable only when you need it.
-
-## Scope: chats and branches
-
-- Settings (profile, prompts, shortcuts) are global.
-- The copilot conversation is stored per chat (in chat metadata), so every chat has its own copilot history — and a branch inherits a copy of it at the moment of branching, then diverges independently, same as your Summaryception data.
-
-## Streaming and thinking models
-
-- **Streaming** is on by default and works when an LLM route (Connection Profile) is selected — the reply streams live into the panel. The "Current API" raw fallback cannot stream. If streaming misbehaves with your backend, untick it in settings; it silently falls back to whole-reply mode on errors.
-- **Thinking** is shown, not hidden: `<think>`/`<thinking>`/`<reasoning>` blocks (or reasoning streamed by the backend) appear live while generating, then collapse into a tappable "thinking" section on the finished reply. Thinking is excluded from the copilot's saved history (keeps the next turn's tokens low) and from edit-JSON parsing (so it can never break the edit applier). Untick "Show thinking blocks" to hide it.
-
-## Settings
-
-- **Recent msgs sent in full** — how many latest messages go in verbatim (default 8, up to 100).
-- **Fetch rounds** — how many times the copilot may request older messages (default 3).
-- **Memory source words** — not code: just words separated by `|`. Any memory source whose NAME contains one of the words is included. Example: your fork stores notes under a source named `bruce_notes` → add `|notes` (or `|bruce`) to the box. The **Memory?** viewer lists sources it can see but skipped, so you copy the word straight from there.
-- **Include ghosted/hidden messages in index** — off by default to save tokens; the snippets stand in for them.
-- **Allow editing my (user) messages** — off by default; user messages are read-only.
-- **System prompt** — fully editable; the `USER_EDIT_RULE` token is swapped automatically based on the checkbox.
-
-## Troubleshooting
-
-- **"No generation backend found"** — pick a Connection Profile in the gear settings, or update SillyTavern (the fallback needs a recent `generateRaw`).
-- **Memory shows "(no memory extension data detected)"** — make sure Summaryception's injection is enabled for this chat, then press **Memory?** again; if its key doesn't match the pattern, widen the regex (e.g. add `|bruce`).
-- **Edit fails with "find text not located"** — the model misquoted too heavily; tell it "resend the edits, copy find verbatim".
-- **Panel doesn't appear** — check the browser console (F12) for `[ContinuityCopilot]` errors and report them.
-
-## What's in v2.1 (feature map)
-
-- **Copilot chat**: sessions (+branch at any message), swipes on the latest reply, edit-and-continue, per-message copy/delete, Retry, Stop, streaming with collapsible thinking, smart scrolling.
-- **Chat surgery**: find/replace and whole-message edits, hide/unhide (OOC-safe, ception-aware, auto re-hide guard with per-chat ledger), diff cards with Undo.
-- **Memory surgery**: memedits on Summaryception (notepad/snippets/audits), Author's Note (path note_prompt), editor notes (path cc_critique); whole-field replace via path; everything undoable.
-- **Commands**: `#f` fix chat vs memory · `#s` sync memory vs chat · `#m` memory vs itself · `#a` snippet fidelity vs originals · `#o` OOC harvest+hide · `#i` ideas · `#d <text>` steer the director.
-- **🎬 Director**: secret episode directives (New/Next/Off), spoiler-free status (?), editable Peek, episode-end detection, persistent episode counter, **auto mode** (auto-start + auto-chain).
-- **📝 Editor**: standing craft critique injected persistently; generate with evidence discipline and local diff receipts; editable Peek; **auto mode** (every N storyteller replies).
-- Everything runs on your chosen Connection Profile; auto features never touch the main API.
-
-## License
-
-MIT. The fuzzy-anchor edit-application idea is inspired by [ST-Copilot](https://github.com/Supker/St-Copilot) (MIT); all code here is written from scratch. Reading Summaryception's runtime data does not make this a derivative work of that (AGPL-3.0) extension — but if you ever copy code from it into this project, relicense this project as AGPL-3.0.
+- Mobile caching is aggressive — after updating, reload the page and confirm the version in the panel header.
+- Only the *displayed* name is "Chat Assistant"; the storage key, slash command, and internal identifiers are unchanged, so updating from an older "Continuity Copilot" install keeps all your settings and memory.

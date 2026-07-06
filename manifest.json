@@ -1,12 +1,12 @@
 {
-    "display_name": "Continuity Copilot",
+    "display_name": "Chat Assistant",
     "loading_order": 100,
     "requires": [],
     "optional": [],
     "js": "index.js",
     "css": "style.css",
     "author": "brucestarkallen",
-    "version": "2.19.0",
+    "version": "2.19.1",
     "homePage": "https://github.com/brucestarkallen/Sillytavern-chat-continuity-co-pilot-",
     "auto_update": false
 }

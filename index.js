@@ -1,5 +1,5 @@
 /*
- * Continuity Copilot — a lightweight SillyTavern extension.
+ * Chat Assistant — a lightweight SillyTavern extension.
  *
  * A small chat panel where you talk to a "fixer" AI that can:
  *   - read your chat (message index + full text on demand),
@@ -16,15 +16,15 @@
     'use strict';
 
     const MODULE = 'continuityCopilot';
-    const LOG = '[ContinuityCopilot]';
-    const VERSION = '2.19.0';
+    const LOG = '[ChatAssistant]';
+    const VERSION = '2.19.1';
 
     // ------------------------------------------------------------------
     // Defaults
     // ------------------------------------------------------------------
 
     const DEFAULT_SYSTEM_PROMPT = [
-        'You are Continuity Copilot, the user\'s co-writer and repair assistant embedded in SillyTavern.',
+        'You are Chat Assistant, the user\'s co-writer and repair assistant embedded in SillyTavern.',
         'The user runs a long roleplay chat. You help them in two ways:',
         'A) REPAIR: find and fix continuity, logic, and canon errors directly in the chat log.',
         'B) IDEAS: brainstorm plot directions, scene ideas, and character beats, and answer story questions — always consistent with [STORY MEMORY].',
@@ -167,7 +167,7 @@
     function toast(msg, type) {
         try {
             if (window.toastr) {
-                (toastr[type || 'info'] || toastr.info)(msg, 'Continuity Copilot');
+                (toastr[type || 'info'] || toastr.info)(msg, 'Chat Assistant');
                 return;
             }
         } catch (e) { /* ignore */ }
@@ -1037,8 +1037,8 @@
         const sys = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
         const convo = messages
             .filter(m => m.role !== 'system')
-            .map(m => (m.role === 'user' ? '[User]\n' : '[Copilot]\n') + m.content)
-            .join('\n\n') + '\n\n[Copilot]\n';
+            .map(m => (m.role === 'user' ? '[User]\n' : '[Assistant]\n') + m.content)
+            .join('\n\n') + '\n\n[Assistant]\n';
         if (typeof c.generateRaw === 'function') {
             try {
                 const res = await c.generateRaw({ prompt: convo, systemPrompt: sys });
@@ -1826,7 +1826,7 @@
                 }
                 const wiRefs = wiActive() ? parseWiFetch(reply) : null;
                 if (wiRefs && wiRefs.length && round < rounds) {
-                    const note = '\uD83C\uDF10 Copilot read full Worldbook entries: ' + wiRefs.join(', ');
+                    const note = '\uD83C\uDF10 Assistant read full Worldbook entries: ' + wiRefs.join(', ');
                     addBubble('note', note); pushHistory('note', note);
                     messages.push({ role: 'assistant', content: reply });
                     messages.push({ role: 'user', content: '[WORLDBOOK ENTRIES]\n' + await wiFullText(wiRefs) });
@@ -1838,14 +1838,14 @@
                 ids.forEach(x => fetchedIds.add(Number(x)));
                 messages.push({ role: 'assistant', content: reply });
                 if (fresh.length) {
-                    const note = 'Copilot read full text of #' + fresh.join(', #') + ' (fetch ' + (round + 1) + '/' + rounds + ')' + (fresh.length < ids.length ? ' \u2014 skipped ' + (ids.length - fresh.length) + ' already-fetched' : '');
+                    const note = 'Assistant read full text of #' + fresh.join(', #') + ' (fetch ' + (round + 1) + '/' + rounds + ')' + (fresh.length < ids.length ? ' \u2014 skipped ' + (ids.length - fresh.length) + ' already-fetched' : '');
                     addBubble('note', note);
                     pushHistory('note', note);
                     let payload = '[FETCHED MESSAGES]\n' + fullTextOf(fresh);
                     if (round === rounds - 1) payload += '\n\n(This was your final fetch \u2014 produce your complete answer now; further fetch requests will not be served.)';
                     messages.push({ role: 'user', content: payload });
                 } else {
-                    const note = 'Copilot re-requested already-fetched messages \u2014 told it to answer now.';
+                    const note = 'Assistant re-requested already-fetched messages \u2014 told it to answer now.';
                     addBubble('note', note);
                     pushHistory('note', note);
                     messages.push({ role: 'user', content: '[FETCHED MESSAGES]\n(All requested ids were already provided earlier in this conversation \u2014 re-read them above instead of re-fetching. If you need DIFFERENT messages, fetch those; otherwise produce your complete final answer.)' });
@@ -2414,7 +2414,7 @@
             preEl.style.display = 'none';
             saveEl.style.display = '';
         } else {
-            preEl.textContent = 'Continuity Copilot v' + VERSION + ' \u2014 drag me by this top bar. Close: the Close button, tapping the dark area, or Esc.\n\n' + text;
+            preEl.textContent = 'Chat Assistant v' + VERSION + ' \u2014 drag me by this top bar. Close: the Close button, tapping the dark area, or Esc.\n\n' + text;
             taEl.style.display = 'none';
             preEl.style.display = '';
             saveEl.style.display = 'none';
@@ -2495,7 +2495,7 @@
         panel.id = 'cc_panel';
         panel.innerHTML = [
             '<div id="cc_header">',
-            '  <span class="cc_title">Continuity Copilot</span>',
+            '  <span class="cc_title">Chat Assistant</span>',
             '  <span class="cc_sub" id="cc_sub"></span>',
             '  <span class="cc_hbtn" id="cc_gear" title="Settings"><i class="fa-solid fa-gear"></i></span>',
             '  <span class="cc_hbtn" id="cc_close" title="Close"><i class="fa-solid fa-xmark"></i></span>',
@@ -2613,7 +2613,7 @@
     }
 
     function resetAllSettings() {
-        try { if (!confirm('Reset ALL Continuity Copilot settings to their tested defaults?\n\nThis restores every prompt, toggle, cadence, and number to baseline. Your Connection Profile stays selected, and your chats, memory, director state, and critique notes are NOT touched. This cannot be undone.')) return; } catch (e) { return; }
+        try { if (!confirm('Reset ALL Chat Assistant settings to their tested defaults?\n\nThis restores every prompt, toggle, cadence, and number to baseline. Your Connection Profile stays selected, and your chats, memory, director state, and critique notes are NOT touched. This cannot be undone.')) return; } catch (e) { return; }
         const c = ctx();
         const keepProfile = settings.profileId;
         const fresh = JSON.parse(JSON.stringify(defaults));
@@ -3088,8 +3088,8 @@
         const div = document.createElement('div');
         div.id = 'cc_menu_item';
         div.className = 'list-group-item flex-container flexGap5 interactable';
-        div.title = 'Toggle Continuity Copilot';
-        div.innerHTML = '<i class="fa-solid fa-user-pen"></i><span>Continuity Copilot</span>';
+        div.title = 'Toggle Chat Assistant';
+        div.innerHTML = '<i class="fa-solid fa-user-pen"></i><span>Chat Assistant</span>';
         div.addEventListener('click', () => togglePanel());
         menu.appendChild(div);
     }
@@ -3104,7 +3104,7 @@
         };
         try {
             if (typeof c.registerSlashCommand === 'function') {
-                c.registerSlashCommand('cc', handler, [], '<span>— toggle Continuity Copilot / send it a request</span>', true, true);
+                c.registerSlashCommand('cc', handler, [], '<span>— toggle Chat Assistant / send it a request</span>', true, true);
                 return;
             }
         } catch (e) { /* ignore */ }
@@ -3113,7 +3113,7 @@
                 c.SlashCommandParser.addCommandObject(c.SlashCommand.fromProps({
                     name: 'cc',
                     callback: handler,
-                    helpString: 'Toggle Continuity Copilot, or send it a request: /cc why is Jillian on the train, fix it',
+                    helpString: 'Toggle Chat Assistant, or send it a request: /cc why is Jillian on the train, fix it',
                 }));
             }
         } catch (e) { console.warn(LOG, 'slash registration failed', e); }
