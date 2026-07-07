@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.19.1';
+    const VERSION = '2.19.2';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -256,8 +256,6 @@
         const m = metaRoot();
         m.activeId = Number(id);
         saveMeta();
-        pendingEdits = [];
-        undoStack = [];
         renderSessions();
         renderHistory();
         renderEditCards();
@@ -276,8 +274,6 @@
         m.sessions.push({ id, name: 'Session ' + n, history: [] });
         m.activeId = id;
         saveMeta();
-        pendingEdits = [];
-        undoStack = [];
         renderSessions();
         renderHistory();
         renderEditCards();
@@ -291,8 +287,6 @@
         m.sessions.push({ id, name, history: JSON.parse(JSON.stringify(cur.history)) });
         m.activeId = id;
         saveMeta();
-        pendingEdits = [];
-        undoStack = [];
         renderSessions();
         renderHistory();
         renderEditCards();
@@ -308,8 +302,6 @@
         m.sessions.push({ id, name, history: JSON.parse(JSON.stringify(cur.history.slice(0, idx + 1))) });
         m.activeId = id;
         saveMeta();
-        pendingEdits = [];
-        undoStack = [];
         renderSessions();
         renderHistory();
         renderEditCards();
@@ -340,8 +332,6 @@
         m.sessions = m.sessions.filter(x => x.id !== m.activeId);
         m.activeId = m.sessions[0].id;
         saveMeta();
-        pendingEdits = [];
-        undoStack = [];
         renderSessions();
         renderHistory();
         renderEditCards();
