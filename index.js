@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.31.0';
+    const VERSION = '2.32.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -73,6 +73,7 @@
         '</memedits>',
         '- "find" must be verbatim from [STORY MEMORY] and long enough to be unique. Keep corrections minimal and in the same style.',
         '- CRITICAL for "find": copy the excerpt CHARACTER-FOR-CHARACTER from the [STORY MEMORY] block \u2014 do NOT paraphrase, reword, summarize, or quote from the chat/story text instead. Even a few reworded words can make it fail to match. If you are not certain of the exact wording, do a whole-field replace with "path" instead of a find/replace.',
+        '- Only propose a find/replace for text you can SEE verbatim RIGHT NOW (in [STORY MEMORY], or in a message you have fetched). Do NOT invent the "wrong" text, and do NOT fix a contradiction you merely INFERRED or reconstructed \u2014 correct only wording that verifiably EXISTS and is verifiably wrong. If you cannot point to the exact wrong text, conclude there may be nothing to fix rather than guessing at a find; a guessed find will always fail to apply and just wastes an attempt.',
         '- To replace an ENTIRE memory field, use {"path": "summaryception.notepad", "replace": "new full text", "reason": "..."} with the exact path shown in [STORY MEMORY] section headers. Adding "find" alongside "path" replaces only within that field.',
         '- Do NOT confuse the two stores. The actual scene prose the characters are LIVING is in CHAT MESSAGES \u2014 fix a wrong detail there with an <edits> chat edit and the message "id". [STORY MEMORY] holds the summaries / notes / ledger ABOUT the scene \u2014 fix those with <memedits>. Use <memedits> ONLY for text that literally appears under a [bracketed.path] label in [STORY MEMORY]; if the wrong wording is in the story prose itself and NOT under such a label, it is a chat message, so use <edits>.',
         '- The Author\'s Note is writable at path "note_prompt" (created if absent). The visible editor-critique notes are writable at path "cc_critique"; full replace with "" deletes them.',
@@ -1639,6 +1640,10 @@
         try {
             const hit = findInChat(edit.find);
             if (hit >= 0) return { ok: false, reason: 'that text is in chat message #' + hit + ', not in memory \u2014 re-propose it as an <edits> chat edit with "id": ' + hit + ' (not <memedits>)' };
+            // Not in memory AND not in the chat: the excerpt exists nowhere, so it is
+            // almost certainly misremembered or invented. Push back hard so the model
+            // stops re-proposing a phantom and reconsiders whether there is any error.
+            return { ok: false, reason: 'that exact text appears in NEITHER memory nor the chat \u2014 it looks misremembered or invented, not a real error. Do NOT re-propose the same find. Re-read [STORY MEMORY] and quote ONLY wording that literally appears there; if you cannot point to the wrong text verbatim, there is probably nothing to fix.' };
         } catch (_) {}
         return res;
     }
