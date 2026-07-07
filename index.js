@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.22.0';
+    const VERSION = '2.23.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -92,6 +92,7 @@
         '- In explanations, refer to blocks WITHOUT angle brackets (write "edits block", "memedits block", "fetch"). The literal tags must appear ONLY wrapping the actual JSON, never inside prose.',
         '- Anchors ("find") must be UNIQUE within their target message \u2014 the applier REJECTS ambiguous anchors. When in doubt, extend the excerpt a few words on each side.',
         '- The user can discuss your proposals before applying them. If they ask you to reconsider or refine an edit, simply propose the improved version in a new edits/memedits block \u2014 it is added to the staging area alongside the earlier ones so they can compare and pick. You do not need to resend unchanged proposals.',
+        '- VALID JSON is required in every edits / memedits / wiedits block: property names and string values in double quotes; write EVERY line break inside a value as \\n (never a real line break); escape any double-quote inside a value as \\" or use single quotes instead; no comments, no trailing commas, no markdown fences. A single stray character makes the whole block unparseable \u2014 keep each value on one line where you can.',
     ].join('\n');
 
     const AUDIT_PROMPT = 'Audit the whole chat against [STORY MEMORY]. Look for continuity and logic errors: wrong locations, wrong character knowledge (information quarantine breaks), timeline contradictions, dropped or duplicated plot state. Fetch full messages if you need them, then list what you found and propose fixes in an <edits> block, plus <memedits> wherever the memory itself is wrong.';
@@ -597,6 +598,40 @@
         return header + '\n' + parts.join('\n');
     }
 
+    // Escape raw newlines/tabs that appear INSIDE JSON string values — the #1 cause
+    // of "Expected ',' or '}'" parse failures (a model pastes a multi-line find/replace
+    // with real line breaks instead of \n). Adapted from the Plot-Essential extension.
+    // Content is preserved: an escaped \n parses back into a real newline.
+    function escapeRawControlsInStrings(s) {
+        let out = '', inStr = false, esc = false;
+        for (let i = 0; i < s.length; i++) {
+            const c = s[i];
+            if (esc) { out += c; esc = false; continue; }
+            if (c === '\\') { out += c; esc = true; continue; }
+            if (c === '"') { inStr = !inStr; out += c; continue; }
+            if (inStr) {
+                if (c === '\n') { out += '\\n'; continue; }
+                if (c === '\r') { out += '\\r'; continue; }
+                if (c === '\t') { out += '\\t'; continue; }
+            }
+            out += c;
+        }
+        return out;
+    }
+
+    // Parse JSON, repairing the common LLM slips if the first parse fails, in order:
+    // (1) drop trailing commas, (2) escape raw control chars inside strings. Throws the
+    // ORIGINAL error if still unparseable (its reported position is the most useful).
+    function parseJsonLoose(raw) {
+        try { return JSON.parse(raw); }
+        catch (e0) {
+            const noTrail = String(raw).replace(/,\s*([\]}])/g, '$1');
+            try { return JSON.parse(noTrail); } catch (e1) { /* try next repair */ }
+            try { return JSON.parse(escapeRawControlsInStrings(noTrail)); } catch (e2) { /* give up */ }
+            throw e0;
+        }
+    }
+
     function parseWiFetch(text) {
         const b = findBlock(text, 'wifetch');
         if (!b) return null;
@@ -634,7 +669,7 @@
         if (!b) return { edits: [] };
         let raw = b.inner.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
         let arr;
-        try { arr = JSON.parse(raw); } catch (e) { return { edits: [], error: e.message }; }
+        try { arr = parseJsonLoose(raw); } catch (e) { return { edits: [], error: e.message }; }
         if (!Array.isArray(arr)) arr = [arr];
         const edits = [];
         for (const o of arr) {
@@ -1111,7 +1146,7 @@
             .replace(/```\s*$/, '')
             .trim();
         try {
-            const arr = JSON.parse(raw);
+            const arr = parseJsonLoose(raw);
             if (!Array.isArray(arr)) return { edits: [], error: 'edits block is not a JSON array' };
             const edits = [];
             for (const e of arr) {
@@ -1142,7 +1177,7 @@
             .replace(/```\s*$/, '')
             .trim();
         try {
-            const arr = JSON.parse(raw);
+            const arr = parseJsonLoose(raw);
             if (!Array.isArray(arr)) return { edits: [], error: 'memedits block is not a JSON array' };
             const edits = [];
             for (const e of arr) {
