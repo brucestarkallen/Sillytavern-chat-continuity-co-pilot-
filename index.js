@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.20.6';
+    const VERSION = '2.20.7';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -70,6 +70,7 @@
         '[{"find": "exact text copied character-for-character from [STORY MEMORY]", "replace": "corrected text", "reason": "short why"}]',
         '</memedits>',
         '- "find" must be verbatim from [STORY MEMORY] and long enough to be unique. Keep corrections minimal and in the same style.',
+        '- CRITICAL for "find": copy the excerpt CHARACTER-FOR-CHARACTER from the [STORY MEMORY] block \u2014 do NOT paraphrase, reword, summarize, or quote from the chat/story text instead. Even a few reworded words can make it fail to match. If you are not certain of the exact wording, do a whole-field replace with "path" instead of a find/replace.',
         '- To replace an ENTIRE memory field, use {"path": "summaryception.notepad", "replace": "new full text", "reason": "..."} with the exact path shown in [STORY MEMORY] section headers. Adding "find" alongside "path" replaces only within that field.',
         '- The Author\'s Note is writable at path "note_prompt" (created if absent). The visible editor-critique notes are writable at path "cc_critique"; full replace with "" deletes them.',
         '- LARGE CHANGES: if a replacement would be very long, split the work into SEVERAL smaller find/replace edits (section by section) in the same block instead of one huge replace \u2014 each edit\'s replace text must stay comfortably within the response budget, or the reply gets cut off.',
@@ -148,6 +149,7 @@
     let settings = null;
     let pendingEdits = [];   // [{id, find, replace, reason, status}]
     let editsCollapsed = false;
+    let _locateTH = 0.78;   // fuzzy-match threshold; appliers set it per edit (memory loosens it)
     let undoStack = [];      // [{label, items:[{id, before}]}]
     let running = false;
     let inited = false;
@@ -1317,7 +1319,7 @@
                 }
             }
         }
-        if (best && best.sim >= 0.78) {
+        if (best && best.sim >= _locateTH) {
             if (second >= best.sim - 0.05) return { ambiguous: 'fuzzy' };
             const startTok = tokens[best.s];
             const endTok = tokens[best.s + best.w - 1];
@@ -1460,6 +1462,7 @@
     }
 
     function applyMemOne(edit, keyBackups) {
+        _locateTH = 0.68;
         const c = ctx();
         const md = c.chatMetadata || c.chat_metadata;
         if (!md) return { ok: false, reason: 'no chat metadata' };
@@ -1559,6 +1562,7 @@
         for (const edit of list) {
             const st = edit.kind === 'wi' ? edit.editStatus : edit.status;
             if (st !== 'pending') continue;
+            _locateTH = 0.78;
             if (edit.kind === 'mem') {
                 const res = applyMemOne(edit, keyBackups);
                 if (res.ok) {
