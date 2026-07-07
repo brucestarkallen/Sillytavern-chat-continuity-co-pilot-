@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.20.3';
+    const VERSION = '2.20.4';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -1490,22 +1490,28 @@
                 key = /^\d+$/.test(tokens[t]) ? Number(tokens[t]) : tokens[t];
                 node = parent[key];
             }
-            if (typeof node !== 'string') return { ok: false, reason: 'unknown memory path (no text field exists there)' };
-            const backupVal = typeof md[rootKey] === 'object' ? JSON.parse(JSON.stringify(md[rootKey])) : md[rootKey];
-            if (edit.find) {
-                const loc = locate(node, edit.find);
-                if (loc && loc.ambiguous) return { ok: false, reason: 'anchor matches multiple places in that field \u2014 give a longer unique excerpt' };
-                if (!loc) return { ok: false, reason: '"find" text not located at that path' };
-                if (!keyBackups.has(rootKey)) keyBackups.set(rootKey, backupVal);
-                parent[key] = node.slice(0, loc.start) + String(edit.replace ?? '') + node.slice(loc.end);
-                return { ok: true, path: edit.path, fuzzy: !!loc.fuzzy };
+            if (typeof node === 'string') {
+                const backupVal = typeof md[rootKey] === 'object' ? JSON.parse(JSON.stringify(md[rootKey])) : md[rootKey];
+                if (edit.find) {
+                    const loc = locate(node, edit.find);
+                    if (loc && !loc.ambiguous) {
+                        if (!keyBackups.has(rootKey)) keyBackups.set(rootKey, backupVal);
+                        parent[key] = node.slice(0, loc.start) + String(edit.replace ?? '') + node.slice(loc.end);
+                        return { ok: true, path: edit.path, fuzzy: !!loc.fuzzy };
+                    }
+                    // excerpt not uniquely in that exact field \u2014 fall through to the memory-wide search below
+                } else {
+                    if (edit.reviewHash && hashText(node) !== edit.reviewHash) return { ok: false, reason: 'field changed since review \u2014 re-run the audit and apply fresh cards' };
+                    if (!keyBackups.has(rootKey)) keyBackups.set(rootKey, backupVal);
+                    parent[key] = String(edit.replace ?? '');
+                    return { ok: true, path: edit.path + ' (full replace)', fuzzy: false };
+                }
+            } else if (!edit.find) {
+                return { ok: false, reason: 'that path points to a list/object, not a text field \u2014 add a verbatim "find" excerpt and I will locate the exact text to change' };
             }
-            if (edit.reviewHash && hashText(node) !== edit.reviewHash) {
-                return { ok: false, reason: 'field changed since review \u2014 re-run the audit and apply fresh cards' };
-            }
-            if (!keyBackups.has(rootKey)) keyBackups.set(rootKey, backupVal);
-            parent[key] = String(edit.replace ?? '');
-            return { ok: true, path: edit.path + ' (full replace)', fuzzy: false };
+            // Path did not land on an editable text field (e.g. a Summaryception ledger threads array), or the
+            // excerpt was not uniquely in the named field. Since we have a "find", fall through to the memory-wide
+            // search below, which recursively locates the excerpt anywhere in memory (including inside lists).
         }
         for (const [key, val] of Object.entries(md)) {
             if (key === MODULE || !re.test(key) || val == null) continue;
