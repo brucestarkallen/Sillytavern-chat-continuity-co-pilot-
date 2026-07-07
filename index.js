@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.23.0';
+    const VERSION = '2.24.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -1852,6 +1852,17 @@
         return rest ? prompt + '\n\nAdditional instruction from the user: ' + rest : prompt;
     }
 
+    // Chat edits whose "find" cannot possibly match because the model never read the
+    // target message in full: it is older than the full-text window (winStart) and was
+    // not fetched, so the "find" is a reconstruction. These get auto-fetched + re-proposed.
+    function blindEditTargets(edits, winStart, fetchedIds) {
+        const ids = [];
+        for (const e of (edits || [])) {
+            if (e && e.kind === 'chat' && typeof e.find === 'string' && e.find && Number.isInteger(e.id)) ids.push(e.id);
+        }
+        return [...new Set(ids)].filter(id => id < winStart && !(fetchedIds && fetchedIds.has && fetchedIds.has(id)));
+    }
+
     // ------------------------------------------------------------------
     // Send flow (with <fetch> tool loop)
     // ------------------------------------------------------------------
@@ -1954,6 +1965,25 @@
                     messages.push({ role: 'assistant', content: reply });
                     messages.push({ role: 'user', content: '[WORLDBOOK ENTRIES]\n' + await wiFullText(wiRefs) });
                     continue;
+                }
+                // Auto-fetch guard for BLIND chat edits: if the model proposed a
+                // find/replace edit to a message older than the full-text window that it
+                // never fetched, its "find" is a reconstruction that cannot match. Fetch
+                // that message for it and have it re-propose against the exact text — so a
+                // correct edit happens automatically instead of a "not located" failure.
+                if (round < rounds) {
+                    const chatLen = (ctx().chat || []).length;
+                    const winStart = Math.max(0, chatLen - Math.max(0, Math.min(100, Number(settings.recentFull) || 0)));
+                    let blind = [];
+                    try { blind = blindEditTargets(parseEdits(reply).edits, winStart, fetchedIds); } catch (_) { /* ignore */ }
+                    if (blind.length) {
+                        blind.forEach(id => fetchedIds.add(id));
+                        const bnote = 'Auto-fetched #' + blind.join(', #') + ' \u2014 the assistant proposed an edit to it without reading it in full, so its exact text was supplied for a correct re-proposal.';
+                        addBubble('note', bnote); pushHistory('note', bnote);
+                        messages.push({ role: 'assistant', content: reply });
+                        messages.push({ role: 'user', content: '[FETCHED MESSAGES]\n' + fullTextOf(blind) + '\n\nYou proposed an <edits> change to the message(s) above but had only their one-line preview, so the "find" you wrote will not match the stored text. RE-PROPOSE those chat edits now, copying each "find" VERBATIM from the exact text above (omit an edit if it no longer needs changing). Keep every other proposal unchanged.' });
+                        continue;
+                    }
                 }
                 const ids = parseFetch(reply);
                 if (!ids || round === rounds) break;
