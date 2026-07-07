@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.28.0';
+    const VERSION = '2.29.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -62,7 +62,7 @@
         '- Never invent message ids that are not in the index.',
         '4. USER_EDIT_RULE',
         '5. Outside those blocks, talk to the user naturally. Keep repair talk brief and concrete; for brainstorming and story discussion you may write more. Never paste whole chat messages back at them.',
-        '6. You can ALSO create, edit, configure, and delete SillyTavern Worldbook / World Info (lorebook) entries \u2014 but only when a [WORLDBOOK] block and <wiedits> instructions appear in this prompt. If they are NOT present and the user asks you to work on the lorebook/Worldbook, do NOT refuse flatly and do NOT invent a format: warmly explain that Worldbook editing just needs to be switched on in Chat Assistant\u2019s settings (enable Worldbook editing and select a book), and offer to do it the moment it is on. When those instructions ARE present, treat lorebook work as fully in scope \u2014 never say you cannot do it.',
+        '6. You can ALSO create, edit, configure, and delete SillyTavern Worldbook / World Info (lorebook) entries \u2014 whenever the <wiedits> instructions appear in this prompt, worldbook editing is fully in scope: use it and NEVER say you cannot. (A [WORLDBOOK] block, when present, shows existing entries; you can create brand-new ones even without it.) If the <wiedits> instructions are NOT present and the user asks for lorebook work, do NOT refuse flatly or invent a format \u2014 warmly explain that a World Info book just needs to be open/active in SillyTavern for you to edit it, and offer to proceed the moment it is.',
     ].join('\n');
 
     const MEMEDIT_RULES = [
@@ -425,6 +425,13 @@
     function wiActive() {
         return !!settings.wiEnable && wiApiAvailable() && wiEffectiveBooks().length > 0;
     }
+    // Worldbook EDITING (instructions + parsing) is available whenever the WI API works
+    // and a book is bound — it does NOT require the wiEnable toggle (that only gates
+    // injecting the book's contents). This is why creating/editing entries works even
+    // if the toggle was never switched on.
+    function wiCanEdit() {
+        return wiApiAvailable() && wiEffectiveBooks().length > 0;
+    }
 
     async function wiLoad(book) {
         const c = ctx();
@@ -560,7 +567,7 @@
             lines.push('');
             for (const b of chosen) {
                 const data = await wiLoad(b);
-                if (data) lines.push('\u2713 "' + b + '" loads OK (' + wiEntryList(data).length + ' entries) \u2014 the copilot can read & edit it.');
+                if (data) lines.push('\u2713 "' + b + '" loads OK (' + wiEntryList(data).length + ' entries) \u2014 worldbook editing is ACTIVE for this book; create / edit / delete works now.' + (settings.wiEnable ? ' Its contents are injected, so the copilot also sees existing entries.' : ' (To let the copilot SEE existing entries while editing, enable \u201Cinject worldbook contents\u201D in settings \u2014 not needed just to create new ones.)'));
                 else lines.push('\u2717 "' + b + '" did NOT load \u2014 check the exact spelling against ST\'s World Info selector.');
             }
         }
@@ -1006,7 +1013,7 @@
             ? 'You may edit user-authored messages when the user asks for it.'
             : 'Never propose edits to user-authored messages; they are read-only.';
         let out = String(settings.systemPrompt || DEFAULT_SYSTEM_PROMPT).replace('USER_EDIT_RULE', rule) + '\n\n' + BEHAVIOR_RULES + '\n\n' + CHAT_EDIT_EXTRAS + '\n\n' + MEMEDIT_RULES;
-        if (wiActive()) out += '\n\n' + WI_RULES;
+        if (wiCanEdit()) out += '\n\n' + WI_RULES;
         return out;
     }
 
@@ -2060,7 +2067,7 @@
                     pushHistory('note', 'Generation stopped \u2014 partial reply kept.');
                     break;
                 }
-                const wiRefs = wiActive() ? parseWiFetch(reply) : null;
+                const wiRefs = wiCanEdit() ? parseWiFetch(reply) : null;
                 if (wiRefs && wiRefs.length && round < rounds) {
                     const note = '\uD83C\uDF10 Assistant read full Worldbook entries: ' + wiRefs.join(', ');
                     addBubble('note', note); pushHistory('note', note);
@@ -2149,16 +2156,14 @@
             if (parsed.error) addBubble('note', 'Edit block error: ' + parsed.error + ' — ask the copilot to resend valid JSON.');
             if (parsedMem.error) addBubble('note', 'Memory edit block error: ' + parsedMem.error + ' — ask the copilot to resend valid JSON.');
             let parsedWi = { edits: [] };
-            if (wiActive()) {
+            if (wiCanEdit()) {
                 parsedWi = parseWiEdits(reply);
                 if (parsedWi.error) addBubble('note', 'Worldbook edit block error: ' + parsedWi.error + ' \u2014 ask the copilot to resend valid JSON.');
             } else if (findBlock(reply, 'wiedits')) {
-                // The model tried to edit the Worldbook but the feature is inactive — say why
-                // instead of dropping it silently (which reads as "nothing happened").
-                const why = !wiApiAvailable() ? 'this SillyTavern build does not expose the World Info API'
-                    : (wiEffectiveBooks().length === 0 ? 'no lorebook is selected \u2014 open a World Info book, or pick one in Chat Assistant\u2019s Worldbook settings'
-                    : 'Worldbook editing is switched off \u2014 turn it on in Chat Assistant\u2019s Worldbook settings');
-                addBubble('note', '\u26A0 The assistant proposed Worldbook changes, but nothing was staged because ' + why + '. Enable Worldbook editing and select a book, then ask again.');
+                // Editing needs the WI API + a bound book. Say exactly which is missing.
+                const why = !wiApiAvailable() ? 'this SillyTavern build does not expose the World Info API (loadWorldInfo / saveWorldInfo)'
+                    : 'no lorebook is selected \u2014 open/activate a World Info book in SillyTavern, or set one in Chat Assistant\u2019s Worldbook settings';
+                addBubble('note', '\u26A0 The assistant proposed Worldbook changes, but nothing was staged because ' + why + '. Fix that and ask again.');
             }
             const allEdits = [...parsed.edits, ...parsedMem.edits, ...parsedWi.edits];
             let didSupersede = 0;
