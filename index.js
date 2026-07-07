@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.20.7';
+    const VERSION = '2.20.8';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -149,7 +149,6 @@
     let settings = null;
     let pendingEdits = [];   // [{id, find, replace, reason, status}]
     let editsCollapsed = false;
-    let _locateTH = 0.78;   // fuzzy-match threshold; appliers set it per edit (memory loosens it)
     let undoStack = [];      // [{label, items:[{id, before}]}]
     let running = false;
     let inited = false;
@@ -1319,7 +1318,7 @@
                 }
             }
         }
-        if (best && best.sim >= _locateTH) {
+        if (best && best.sim >= 0.78) {
             if (second >= best.sim - 0.05) return { ambiguous: 'fuzzy' };
             const startTok = tokens[best.s];
             const endTok = tokens[best.s + best.w - 1];
@@ -1462,7 +1461,6 @@
     }
 
     function applyMemOne(edit, keyBackups) {
-        _locateTH = 0.68;
         const c = ctx();
         const md = c.chatMetadata || c.chat_metadata;
         if (!md) return { ok: false, reason: 'no chat metadata' };
@@ -1562,7 +1560,6 @@
         for (const edit of list) {
             const st = edit.kind === 'wi' ? edit.editStatus : edit.status;
             if (st !== 'pending') continue;
-            _locateTH = 0.78;
             if (edit.kind === 'mem') {
                 const res = applyMemOne(edit, keyBackups);
                 if (res.ok) {
@@ -2968,8 +2965,16 @@
             const status = (edit.kind === 'wi') ? edit.editStatus : edit.status;
             return x.label + ' [' + target + ']' + (status && status !== 'pending' ? ' (' + status + ')' : '') + ': ' + summary + (edit.reason ? ' \u2014 ' + edit.reason : '');
         });
+        const failed = labelForEdits(pendingEdits).filter(function (x) {
+            const stx = (x.edit.kind === 'wi') ? x.edit.editStatus : x.edit.status;
+            return typeof stx === 'string' && stx.indexOf('failed') === 0;
+        }).map(function (x) { return x.label; });
+        const failNote = failed.length
+            ? ('\n\nSOME PROPOSALS FAILED TO APPLY: ' + failed.join(', ') + '. They failed because the "find" excerpt did not match the source text exactly \u2014 which almost always means it was paraphrased, not copied verbatim. Re-propose each failed one with the "find" copied CHARACTER-FOR-CHARACTER from the [STORY MEMORY] block (or the exact message text) \u2014 do NOT paraphrase, reword, or shorten it loosely. If you cannot reproduce the exact wording, quote a SHORTER fragment you are 100% certain of, or replace the whole field with a "path" edit. Do not drop them silently.')
+            : '';
         return '[PENDING PROPOSALS \u2014 you already proposed these; they are NOT yet applied and are awaiting the user]\n' +
             lines.join('\n') +
+            failNote +
             '\n\nWhen you next propose edits: only propose NEW fixes. If you are CORRECTING or REPLACING any pending proposal above, do NOT re-list it as-is \u2014 name its exact label(s) in a <supersede> block (e.g. <supersede>Memory fix 1, Chat fix 2</supersede>) and give the corrected version as a fresh edit; the superseded ones are auto-skipped so "Apply all" stays clean. Refer to these by their labels when you talk to the user.';
     }
 
