@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.20.10';
+    const VERSION = '2.20.11';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -76,6 +76,7 @@
         '- LARGE CHANGES: if a replacement would be very long, split the work into SEVERAL smaller find/replace edits (section by section) in the same block instead of one huge replace \u2014 each edit\'s replace text must stay comfortably within the response budget, or the reply gets cut off.',
         '- Anchors ("find") must be UNIQUE across the entire memory \u2014 the applier REJECTS anchors that match multiple places. Extend the excerpt until it is unmistakable.',
         '- Only prose/text fields are editable. Never target structural fields (turnRange, timestamps, indices, counters).',
+        '- The [bracketed.path] lines in [STORY MEMORY] (e.g. [summaryception.ledger.Jovan.state]) are SECTION LABELS the tool adds to show which field each block of text belongs to \u2014 they are NOT part of the stored text. NEVER put a [bracketed.path] label inside a "find" or "replace"; quote ONLY the actual content that appears below the label. Do not try to "fix", remove, or de-duplicate the labels themselves \u2014 they are display-only.',
         '- When SEVERAL fixes touch the SAME memory field, prefer ONE consolidated edit (a single find/replace that covers them, or a whole-field "path" replace) over many small ones \u2014 applying one edit changes the text, which can make a later edit\'s "find" no longer match. Fewer, larger edits per field apply far more reliably.',
         '- Use <edits> only for chat messages and <memedits> only for memory. Never mix them.',
     ].join('\n');
@@ -1461,7 +1462,21 @@
         return null;
     }
 
+    function stripMemLabels(text) {
+        // [bracketed.path] lines are display labels gatherMemory adds to show which field text belongs to;
+        // they are NOT stored content. Strip them from find/replace so the excerpt matches the real text
+        // (and so a label never gets inserted into the stored memory).
+        return String(text == null ? '' : text)
+            .split('\n')
+            .filter(function (ln) { return !/^\s*\[[^\n]*\.[^\n]*\]\s*$/.test(ln); })
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n')
+            .replace(/^\n+|\n+$/g, '');
+    }
+
     function applyMemOne(edit, keyBackups) {
+        if (typeof edit.find === 'string') edit.find = stripMemLabels(edit.find);
+        if (typeof edit.replace === 'string') edit.replace = stripMemLabels(edit.replace);
         const c = ctx();
         const md = c.chatMetadata || c.chat_metadata;
         if (!md) return { ok: false, reason: 'no chat metadata' };
