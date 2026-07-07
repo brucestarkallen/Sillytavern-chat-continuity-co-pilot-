@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.20.8';
+    const VERSION = '2.20.9';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -2970,7 +2970,7 @@
             return typeof stx === 'string' && stx.indexOf('failed') === 0;
         }).map(function (x) { return x.label; });
         const failNote = failed.length
-            ? ('\n\nSOME PROPOSALS FAILED TO APPLY: ' + failed.join(', ') + '. They failed because the "find" excerpt did not match the source text exactly \u2014 which almost always means it was paraphrased, not copied verbatim. Re-propose each failed one with the "find" copied CHARACTER-FOR-CHARACTER from the [STORY MEMORY] block (or the exact message text) \u2014 do NOT paraphrase, reword, or shorten it loosely. If you cannot reproduce the exact wording, quote a SHORTER fragment you are 100% certain of, or replace the whole field with a "path" edit. Do not drop them silently.')
+            ? ('\n\nSOME PROPOSALS FAILED TO APPLY: ' + failed.join(', ') + '. They failed because the "find" excerpt did not match the source text exactly \u2014 usually because it was reconstructed or paraphrased instead of copied. To fix each: for a CHAT edit, if you do NOT already have that message\'s FULL text above, <fetch> that message first and copy the "find" verbatim from the fetched text (never guess a message you have not fetched); for a MEMORY edit, copy the "find" CHARACTER-FOR-CHARACTER from the [STORY MEMORY] block. Never paraphrase or reword. If unsure, quote a SHORTER fragment you are 100% certain of \u2014 for a small change like a number typo the single failing word can be the ENTIRE "find" (e.g. find "Two-fourteen", replace "Two-thirty-eight") \u2014 or replace the whole field with a "path" edit. Do not drop them silently.')
             : '';
         return '[PENDING PROPOSALS \u2014 you already proposed these; they are NOT yet applied and are awaiting the user]\n' +
             lines.join('\n') +
