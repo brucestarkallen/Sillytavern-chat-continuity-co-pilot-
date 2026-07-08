@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.32.0';
+    const VERSION = '2.33.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -132,7 +132,7 @@
         profileId: '',
         recentFull: 8,
         fetchRounds: 3,
-        maxTokens: 4096,
+        maxTokens: 8192,
         thinkRetries: 2,
         wiEnable: false,
         wiBooks: '',
