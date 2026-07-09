@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.36.0';
+    const VERSION = '2.37.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -114,7 +114,7 @@
         PSYCH_SHORTCUT,
     ].join('\n');
 
-    const DEFAULT_DIRECTOR_PROMPT = [
+    const LEGACY_DIRECTOR_PROMPT = [
         'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
         'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
         'The note must contain:',
@@ -127,6 +127,22 @@
         'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
         'Honor any [editor notes] standing corrections present in the context \u2014 the episode you design must not repeat faults the editor has flagged.',
         'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. Under 250 words. Output ONLY the director\'s note text, no preamble.',
+    ].join('\n');
+
+    const DEFAULT_DIRECTOR_PROMPT = [
+        'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
+        'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
+        'The note must contain:',
+        '1. EPISODE PREMISE \u2014 one television-episode-quality premise rising naturally from existing threads. The episode opens already in motion \u2014 never with waking up, routine, or empty transit.',
+        '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO or WHAT initiates and the pressure it puts on the player character. At least one beat must come from OUTSIDE the personal cast: the crowd/public, an institution or system, the environment, or chance. Weave ONE light B-beat between the pressure beats \u2014 humor, warmth, rivalry-banter, or a small personal stake among the cast \u2014 the breath between escalations that makes the pressure land harder.',
+        '3. NPC & WORLD INITIATIVE \u2014 antagonists, NPCs, and the world itself act first, true to their established methods; the setting should feel alive beyond the main cast.',
+        '4. LANDING \u2014 the natural end state of the episode and its consequence.',
+        '5. HOOK \u2014 the landing must leave exactly one thread visibly burning as the seed of the next episode: an unexplained arrival, an overheard fragment, a consequence coming due, a promise or debt created, a mask slipping half an inch. Resolution without a new question is forbidden \u2014 an episode that closes everything kills the story.',
+        'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental).',
+        'Be bold: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
+        'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
+        'Honor any [editor notes] standing corrections present in the context \u2014 the episode you design must not repeat faults the editor has flagged.',
+        'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. Under 300 words. Output ONLY the director\'s note text, no preamble.',
     ].join('\n');
 
     const defaults = {
@@ -209,6 +225,10 @@
             settings.directorMode = settings.directorAuto === true ? 'auto' : 'off';
         }
         delete settings.directorAuto;
+        // Migration: upgrade the stored director prompt if the user never customized it
+        if (typeof settings.directorPrompt === 'string' && settings.directorPrompt.trim() === LEGACY_DIRECTOR_PROMPT.trim()) {
+            settings.directorPrompt = DEFAULT_DIRECTOR_PROMPT;
+        }
         try {
             if (typeof settings.shortcuts === 'string' && settings.shortcuts.trim() && !/^\s*#p\s*=/m.test(settings.shortcuts)) {
                 settings.shortcuts = settings.shortcuts.replace(/\s*$/, '') + '\n' + PSYCH_SHORTCUT;
@@ -2073,15 +2093,15 @@
             toast('Usage: #d your direction \u2014 e.g. "#d make Silas corner Jovan at the duel field this episode"', 'info');
             return;
         }
-        const sm = userText.match(/^#s\s+([\s\S]+)$/i);
+        const sm = userText.match(/^#e\s+([\s\S]+)$/i);
         if (sm) {
             addBubble('user', userText);
             pushHistory('note', '\uD83C\uDFAC Episode seed given: ' + sm[1].trim().slice(0, 300));
             await generateDirective('seed', false, sm[1].trim());
             return;
         }
-        if (/^#s$/i.test(userText)) {
-            toast('Usage: #s your seed for the next episode \u2014 e.g. "#s a prince arrives at the academy and starts brutalizing the fighters"', 'info');
+        if (/^#e$/i.test(userText)) {
+            toast('Usage: #e your seed for the next episode \u2014 e.g. "#e a prince arrives at the academy and starts brutalizing the fighters"', 'info');
             return;
         }
         const expanded = expandShortcut(userText);
@@ -2376,7 +2396,7 @@
         const role = c.extension_prompt_roles?.SYSTEM ?? 0;
         try {
             const value = (d && d.text)
-                ? "[Director's Note \u2014 secret from the player. Use it to give NPCs initiative and shape the episode, while always adapting to the player's choices instead of forcing outcomes. When the LANDING state is fully reached and the episode is complete, append the exact marker [EPISODE_END] at the very end of your reply.]\n" + d.text
+                ? "[Director's Note \u2014 secret from the player. Use it to give NPCs initiative and shape the episode, while always adapting to the player's choices instead of forcing outcomes. PACING LAW: open scenes in motion; compress mundane routine (waking, meals, travel, classes without incident) to a single line or skip it with a time-cut unless a beat lives inside it; every reply must advance a beat, reveal something new, or shift a relationship \u2014 never idle daily simulation. When the LANDING state is fully reached and the episode is complete, append the exact marker [EPISODE_END] at the very end of your reply.]\n" + d.text
                 : '';
             c.setExtensionPrompt(DIRECTOR_KEY, value, 1, depth, false, role);
         } catch (e) { console.warn(LOG, 'director injection failed', e); }
@@ -2448,6 +2468,7 @@
             const sys = [
                 'You are a ruthless story editor reviewing a long-form roleplay. Produce STANDING NOTES for the storyteller AI: concrete, reusable craft corrections that fix systemic weaknesses.',
                 'Analyze for: claustrophobia (everything orbiting the MC), dropped characters or props (people who vanish mid-scene), missing ambient world life (background events, crowds, random encounters, off-screen agendas), repeated mistakes, contradictions with the world\'s own rules, and stale pacing.',
+                'Also analyze the four worst immersion killers: (1) AGENCY THEFT \u2014 the storyteller narrating the player character\'s actions, dialogue, decisions, or inner feelings instead of leaving them to the player; (2) SAME-VOICE NPCS \u2014 characters whose dialogue is interchangeable, losing their established speech patterns, verbal tics, and registers; (3) RUSHED RESOLUTIONS \u2014 a conflict, fight, or dramatic confrontation raised and settled inside a single reply instead of played out across turns; (4) PHRASE TICS \u2014 stock phrases, repeated sentence shapes, or the same imagery recycled across replies.',
                 'Also mine any OOC/meta exchanges in the chat (corrections in (( )), [brackets], or marked OOC) for lessons the storyteller was already told.',
                 'Discipline: only add a correction you can tie to concrete evidence in the context. If the story has not meaningfully changed since [CURRENT NOTES], or no genuine new weakness exists, return the current notes unchanged apart from removing items the storyteller has demonstrably fixed. NEVER invent problems to fill space \u2014 an unchanged or shorter list is a good answer.',
                 'Standing notes are for SYSTEMIC patterns only; do not add a note for a one-off slip that a single chat edit could fix.',
@@ -2606,7 +2627,7 @@
         const d = metaRoot().director;
         if (!d) { toast('No directive active.', 'warning'); return; }
         if (d.concluded) {
-            addBubble('note', '\uD83C\uDFAC Episode ' + d.episode + ' already concluded \u2014 ' + (settings.directorMode === 'cowriter' ? 'seed the next one with "#s \u2026" or \uD83C\uDFAC Seed.' : 'press \uD83C\uDFAC Next when ready.'));
+            addBubble('note', '\uD83C\uDFAC Episode ' + d.episode + ' already concluded \u2014 ' + (settings.directorMode === 'cowriter' ? 'seed the next one with "#e \u2026" or \uD83C\uDFAC Seed.' : 'press \uD83C\uDFAC Next when ready.'));
             return;
         }
         if (running) return;
@@ -2662,7 +2683,7 @@
             if (stopRequested) { addBubble('note', 'Stopped.'); return; }
             const text = sp.rest.trim();
             if (!text) throw new Error(sp.think ? 'answer consumed by thinking \u2014 raise Max output tokens or lower reasoning effort' : 'empty suggestions');
-            const note = '\uD83D\uDCA1 Episode seeds \u2014 pick one, remix, or ignore. Start the one you want with "#s \u2026":\n' + text;
+            const note = '\uD83D\uDCA1 Episode seeds \u2014 pick one, remix, or ignore. Start the one you want with "#e \u2026":\n' + text;
             addBubble('note', note);
             pushHistory('note', note);
         } catch (err) {
@@ -3086,7 +3107,7 @@
             '<select id="cc_dir_mode">',
             '  <option value="off">Off \u2014 manual only (\uD83C\uDFAC New / Next / Seed buttons)</option>',
             '  <option value="auto">Auto \u2014 AI keeps a secret episode running (auto-starts E1, auto-chains Next)</option>',
-            '  <option value="cowriter">Co-writer \u2014 you seed each episode ("#s \u2026"); AI builds and hides the beats</option>',
+            '  <option value="cowriter">Co-writer \u2014 you seed each episode ("#e \u2026"); AI builds and hides the beats</option>',
             '</select>',
             '<div style="margin:10px 0 2px;font-weight:600;opacity:0.75;">Worldbook (World Info) \u2014 optional</div>',
             '<div class="cc_check"><input type="checkbox" id="cc_wi_enable"><span>Inject the Worldbook\u2019s existing entries so the copilot can see &amp; audit them. Creating and editing entries works whenever a book is active in SillyTavern \u2014 even with this off.</span></div>',
@@ -3660,7 +3681,7 @@
             if ((!d || d.concluded) && m.cowriterNudged !== pendingKey) {
                 m.cowriterNudged = pendingKey;
                 saveMeta();
-                const note = '\uD83C\uDFAC Co-writer: ' + (d ? 'episode ' + d.episode + ' is done' : 'no episode is running') + ' \u2014 seed the next one with "#s your premise" or \uD83C\uDFAC Seed. Want options? \u22EE More \u2192 \uD83D\uDCA1 Seed ideas.';
+                const note = '\uD83C\uDFAC Co-writer: ' + (d ? 'episode ' + d.episode + ' is done' : 'no episode is running') + ' \u2014 seed the next one with "#e your premise" or \uD83C\uDFAC Seed. Want options? \u22EE More \u2192 \uD83D\uDCA1 Seed ideas.';
                 addBubble('note', note);
             }
         } catch (e) { /* ignore */ }
@@ -3836,7 +3857,7 @@
                     updateSub();
                     const note = '\uD83C\uDFAC Episode ' + d.episode + ' concluded'
                         + (settings.directorMode === 'auto' ? ' \u2014 auto-directing the next episode.'
-                            : settings.directorMode === 'cowriter' ? ' \u2014 your turn, co-writer: "#s your premise", \uD83C\uDFAC Seed, or \uD83D\uDCA1 Seed ideas.'
+                            : settings.directorMode === 'cowriter' ? ' \u2014 your turn, co-writer: "#e your premise", \uD83C\uDFAC Seed, or \uD83D\uDCA1 Seed ideas.'
                                 : ' \u2014 press \uD83C\uDFAC Next when ready.');
                     toast(note, 'success');
                     addBubble('note', note);
