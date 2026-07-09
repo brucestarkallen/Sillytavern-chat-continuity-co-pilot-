@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.35.0';
+    const VERSION = '2.36.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -152,7 +152,7 @@
         critiqueDepth: 8,
         autoRehide: true,
         critiqueAuto: 0,
-        directorAuto: false,
+        directorMode: 'off', // 'off' | 'auto' | 'cowriter'
         shortcuts: DEFAULT_SHORTCUTS,
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
     };
@@ -204,6 +204,11 @@
         const c = ctx();
         c.extensionSettings[MODULE] = Object.assign({}, defaults, c.extensionSettings[MODULE] || {});
         settings = c.extensionSettings[MODULE];
+        // Migration: legacy directorAuto boolean -> directorMode string
+        if (!['off', 'auto', 'cowriter'].includes(settings.directorMode)) {
+            settings.directorMode = settings.directorAuto === true ? 'auto' : 'off';
+        }
+        delete settings.directorAuto;
         try {
             if (typeof settings.shortcuts === 'string' && settings.shortcuts.trim() && !/^\s*#p\s*=/m.test(settings.shortcuts)) {
                 settings.shortcuts = settings.shortcuts.replace(/\s*$/, '') + '\n' + PSYCH_SHORTCUT;
@@ -2068,6 +2073,17 @@
             toast('Usage: #d your direction \u2014 e.g. "#d make Silas corner Jovan at the duel field this episode"', 'info');
             return;
         }
+        const sm = userText.match(/^#s\s+([\s\S]+)$/i);
+        if (sm) {
+            addBubble('user', userText);
+            pushHistory('note', '\uD83C\uDFAC Episode seed given: ' + sm[1].trim().slice(0, 300));
+            await generateDirective('seed', false, sm[1].trim());
+            return;
+        }
+        if (/^#s$/i.test(userText)) {
+            toast('Usage: #s your seed for the next episode \u2014 e.g. "#s a prince arrives at the academy and starts brutalizing the fighters"', 'info');
+            return;
+        }
         const expanded = expandShortcut(userText);
         pushHistory('user', expanded);
         addBubble('user', userText, meta().history.length - 1);
@@ -2489,21 +2505,25 @@
         if (mode === 'next') {
             extra.push('A previous episode directive is provided; treat it as concluded and write the NEXT episode, carrying its consequences forward. Vary the pressure mix compared to the previous episode.');
         }
+        if (mode === 'seed') {
+            extra.push('The player has provided an EPISODE SEED \u2014 their co-written premise for the next episode. The seed is MANDATORY: build the entire episode around it. Expand it into the full directive (premise, beats, initiative, landing) with your own inventive execution \u2014 the player wants to be surprised by HOW it unfolds, so add twists, complications, and specifics the seed does not spell out. If a previous episode directive is provided, treat it as concluded and carry its consequences into this one. If the seed conflicts with established canon in [STORY MEMORY], honor the intent of the seed while bending the execution to fit canon.');
+        }
         if (mode === 'edit') {
             extra.push('The CURRENT directive and the player\'s direction instruction are provided. Rewrite the directive to incorporate the player\'s direction while preserving whatever still works. Keep the same episode. If no current directive is provided, write a fresh one built around the player\'s direction.');
         }
         return base + (extra.length ? '\n' + extra.join('\n') : '');
     }
 
-    async function generateDirective(mode, isAuto) {
+    async function generateDirective(mode, isAuto, seedText) {
         if (running) return;
         running = true;
         setBusy(true);
-        const busyNote = addBubble('busy', mode === 'next' ? 'directing the next episode\u2026' : 'directing\u2026');
+        const busyNote = addBubble('busy', mode === 'seed' ? 'directing your episode\u2026' : mode === 'next' ? 'directing the next episode\u2026' : 'directing\u2026');
         try {
             const prev = metaRoot().director;
             const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '')
-                + (mode === 'next' && prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded]\n' + prev.text : '')
+                + ((mode === 'next' || mode === 'seed') && prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded]\n' + prev.text : '')
+                + (mode === 'seed' ? '\n\n[PLAYER\'S EPISODE SEED]\n' + String(seedText || '').trim() : '')
                 + '\n\nWrite the director\'s note now.';
             const sp = await callLLMSmart([
                 { role: 'system', content: directorAuthorPrompt(mode) },
@@ -2512,14 +2532,16 @@
             if (stopRequested) { addBubble('note', 'Stopped \u2014 directive unchanged.'); return; }
             const text = sp.rest.trim();
             if (!text) throw new Error(sp.think ? 'answer consumed by thinking \u2014 raise Max output tokens or lower reasoning effort' : 'empty directive');
-            const ep = mode === 'next'
+            const ep = (mode === 'next' || mode === 'seed')
                 ? (Math.max(Number(prev?.episode) || 0, Number(metaRoot().directorEp) || 0) + 1)
                 : (Number(prev?.episode) || 1);
             metaRoot().director = { text, episode: ep, ts: Date.now() };
             metaRoot().directorEp = Math.max(Number(metaRoot().directorEp) || 0, ep);
             saveMeta();
             applyInjections();
-            const note = (isAuto ? '\uD83C\uDFAC Auto \u2014 directive set (episode ' : '\uD83C\uDFAC Directive set (episode ') + ep + '). Content hidden \u2014 just keep playing.';
+            const note = mode === 'seed'
+                ? '\uD83C\uDFAC Episode ' + ep + ' built around your seed. Beats hidden \u2014 just keep playing (\uD83C\uDFAC Peek to spoil yourself).'
+                : (isAuto ? '\uD83C\uDFAC Auto \u2014 directive set (episode ' : '\uD83C\uDFAC Directive set (episode ') + ep + '). Content hidden \u2014 just keep playing.';
             addBubble('note', note);
             pushHistory('note', note);
             updateSub();
@@ -2584,7 +2606,7 @@
         const d = metaRoot().director;
         if (!d) { toast('No directive active.', 'warning'); return; }
         if (d.concluded) {
-            addBubble('note', '\uD83C\uDFAC Episode ' + d.episode + ' already concluded \u2014 press \uD83C\uDFAC Next when ready.');
+            addBubble('note', '\uD83C\uDFAC Episode ' + d.episode + ' already concluded \u2014 ' + (settings.directorMode === 'cowriter' ? 'seed the next one with "#s \u2026" or \uD83C\uDFAC Seed.' : 'press \uD83C\uDFAC Next when ready.'));
             return;
         }
         if (running) return;
@@ -2609,6 +2631,42 @@
             }
         } catch (err) {
             addBubble('note', 'Director status error: ' + (err?.message || err));
+        } finally {
+            busyNote.remove();
+            running = false;
+            setBusy(false);
+        }
+    }
+
+    async function suggestSeeds() {
+        if (running) return;
+        running = true;
+        setBusy(true);
+        const busyNote = addBubble('busy', 'sketching episode seeds\u2026');
+        try {
+            const prev = metaRoot().director;
+            const sys = [
+                'You are a story director\'s idea partner for a long-form roleplay. Propose exactly 3 EPISODE SEEDS: short premises the player can pick from for the next episode.',
+                'Each seed: ONE line, under 25 words, phrased as a hook (what erupts, arrives, or unravels) \u2014 not a full outline and no spoiler-level specifics; leave room for the director to surprise.',
+                'Ground every seed in [STORY MEMORY] and the current situation: unresolved threads, dangling consequences, promises, rivals, secrets at risk. Make the 3 seeds genuinely different in pressure source (personal / social or institutional / environmental or chance).',
+                'Never resolve tension in the seed itself \u2014 seeds open doors, they do not close them.',
+                'Output ONLY the 3 seeds as numbered lines, nothing else.',
+            ].join('\n');
+            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '')
+                + (prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded; avoid repeating its pressure mix]\n' + prev.text : '')
+                + '\n\nPropose the 3 seeds now.';
+            const sp = await callLLMSmart([
+                { role: 'system', content: sys },
+                { role: 'user', content: user },
+            ]);
+            if (stopRequested) { addBubble('note', 'Stopped.'); return; }
+            const text = sp.rest.trim();
+            if (!text) throw new Error(sp.think ? 'answer consumed by thinking \u2014 raise Max output tokens or lower reasoning effort' : 'empty suggestions');
+            const note = '\uD83D\uDCA1 Episode seeds \u2014 pick one, remix, or ignore. Start the one you want with "#s \u2026":\n' + text;
+            addBubble('note', note);
+            pushHistory('note', note);
+        } catch (err) {
+            addBubble('note', 'Seed suggestion error: ' + (err?.message || err));
         } finally {
             busyNote.remove();
             running = false;
@@ -2853,6 +2911,7 @@
             '      <button class="cc_btn" id="cc_audit" title="Full continuity audit">\uD83D\uDD0D Audit</button>',
             '      <button class="cc_btn" id="cc_dirnew" title="Set or replace the secret episode directive">\uD83C\uDFAC New</button>',
             '      <button class="cc_btn" id="cc_dirnext" title="Conclude this episode and direct the next">\uD83C\uDFAC Next</button>',
+            '      <button class="cc_btn" id="cc_dirseed" title="Co-write: seed the next episode with your own premise">\uD83C\uDFAC Seed</button>',
             '      <button class="cc_btn" id="cc_dirstat" title="Spoiler-free episode progress check">\uD83C\uDFAC ?</button>',
             '      <button class="cc_btn" id="cc_critique" title="Editor pass: update standing craft notes">\uD83D\uDCDD Critique</button>',
             '    </div>',
@@ -2863,6 +2922,7 @@
             '      <div id="cc_more_wrap" style="position:relative;display:inline-block;">',
             '        <button class="cc_btn" id="cc_more" title="More tools">\u22EE More</button>',
             '        <div id="cc_more_menu" style="display:none;position:absolute;bottom:110%;right:0;background:#1e1e1e;border:1px solid rgba(255,255,255,0.3);border-radius:8px;padding:6px;z-index:60;min-width:170px;box-shadow:0 6px 18px rgba(0,0,0,0.55);">',
+            '          <button class="cc_btn" id="cc_dirideas" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Suggest 3 episode seeds to pick from">\uD83D\uDCA1 Seed ideas</button>',
             '          <button class="cc_btn" id="cc_dirpeek" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Reveal the directive (spoiler!)">\uD83C\uDFAC Peek directive</button>',
             '          <button class="cc_btn" id="cc_diroff" style="display:block;width:100%;margin:3px 0;text-align:left;" title="Remove the directive">\uD83C\uDFAC Director off</button>',
             '          <button class="cc_btn" id="cc_critpeek" style="display:block;width:100%;margin:3px 0;text-align:left;" title="View or hand-edit the critique">\uD83D\uDCDD Peek critique</button>',
@@ -2926,6 +2986,15 @@
         el('cc_dellast').addEventListener('click', () => deleteLastExchange());
         el('cc_dirnew').addEventListener('click', () => generateDirective('new'));
         el('cc_dirnext').addEventListener('click', () => generateDirective('next'));
+        el('cc_dirseed').addEventListener('click', () => {
+            const seed = prompt('Your seed for the next episode \u2014 one or two lines is plenty:\n(e.g. "a prince arrives at the academy and starts brutalizing the fighters")');
+            const t = String(seed || '').trim();
+            if (!t) return;
+            pushHistory('note', '\uD83C\uDFAC Episode seed given: ' + t.slice(0, 300));
+            addBubble('note', '\uD83C\uDFAC Seed: ' + t.slice(0, 300));
+            generateDirective('seed', false, t);
+        });
+        el('cc_dirideas').addEventListener('click', () => suggestSeeds());
         el('cc_diroff').addEventListener('click', () => clearDirective());
         el('cc_dirstat').addEventListener('click', () => directorStatus());
         el('cc_dirpeek').addEventListener('click', () => peekDirective());
@@ -3013,7 +3082,12 @@
             '<input type="text" id="cc_dir_anchors" placeholder="e.g. Classroom of the Elite, Kaguya-sama">',
             '<label>Auto-critique: run the editor every N storyteller replies (0 = off; needs a Connection Profile)</label>',
             '<input type="number" id="cc_crit_auto" min="0" max="100">',
-            '<div class="cc_check"><input type="checkbox" id="cc_dir_auto"><span>Auto-director: keep a secret episode running (auto-starts E1, auto-chains Next on conclusion; needs a Connection Profile)</span></div>',
+            '<label>Director mode</label>',
+            '<select id="cc_dir_mode">',
+            '  <option value="off">Off \u2014 manual only (\uD83C\uDFAC New / Next / Seed buttons)</option>',
+            '  <option value="auto">Auto \u2014 AI keeps a secret episode running (auto-starts E1, auto-chains Next)</option>',
+            '  <option value="cowriter">Co-writer \u2014 you seed each episode ("#s \u2026"); AI builds and hides the beats</option>',
+            '</select>',
             '<div style="margin:10px 0 2px;font-weight:600;opacity:0.75;">Worldbook (World Info) \u2014 optional</div>',
             '<div class="cc_check"><input type="checkbox" id="cc_wi_enable"><span>Inject the Worldbook\u2019s existing entries so the copilot can see &amp; audit them. Creating and editing entries works whenever a book is active in SillyTavern \u2014 even with this off.</span></div>',
             '<label>Book name(s) to manage (comma-separated; use \u201CWorldbook: detect\u201D in the \u22EE menu to find them)</label>',
@@ -3053,7 +3127,7 @@
         el('cc_crit_depth').value = settings.critiqueDepth;
         el('cc_dir_anchors').value = settings.directorAnchors || '';
         el('cc_crit_auto').value = settings.critiqueAuto;
-        el('cc_dir_auto').checked = !!settings.directorAuto;
+        el('cc_dir_mode').value = ['off', 'auto', 'cowriter'].includes(settings.directorMode) ? settings.directorMode : 'off';
         el('cc_wi_enable').checked = !!settings.wiEnable;
         el('cc_wi_books').value = settings.wiBooks || '';
         el('cc_wi_full').checked = !!settings.wiFull;
@@ -3081,7 +3155,7 @@
             settings.critiqueDepth = Number(el('cc_crit_depth').value) || 8;
             settings.directorAnchors = el('cc_dir_anchors').value;
             settings.critiqueAuto = Math.max(0, Number(el('cc_crit_auto').value) || 0);
-            settings.directorAuto = el('cc_dir_auto').checked;
+            settings.directorMode = el('cc_dir_mode').value || 'off';
             settings.wiEnable = el('cc_wi_enable').checked;
             settings.wiBooks = el('cc_wi_books').value;
             settings.wiFull = el('cc_wi_full').checked;
@@ -3570,12 +3644,25 @@
 
     function maybeAutoDirector() {
         try {
-            if (!settings.directorAuto) return;
+            const mode = settings.directorMode || 'off';
+            if (mode === 'off') return;
             if (running) return;
             if (!settings.profileId) return;
             const d = metaRoot().director;
-            if (!d) { generateDirective('new', true); return; }
-            if (d.concluded) generateDirective('next', true);
+            if (mode === 'auto') {
+                if (!d) { generateDirective('new', true); return; }
+                if (d.concluded) generateDirective('next', true);
+                return;
+            }
+            // cowriter: never generate on its own; nudge the player for a seed (once per pending episode)
+            const m = metaRoot();
+            const pendingKey = d ? 'E' + d.episode + '-done' : 'E0-start';
+            if ((!d || d.concluded) && m.cowriterNudged !== pendingKey) {
+                m.cowriterNudged = pendingKey;
+                saveMeta();
+                const note = '\uD83C\uDFAC Co-writer: ' + (d ? 'episode ' + d.episode + ' is done' : 'no episode is running') + ' \u2014 seed the next one with "#s your premise" or \uD83C\uDFAC Seed. Want options? \u22EE More \u2192 \uD83D\uDCA1 Seed ideas.';
+                addBubble('note', note);
+            }
         } catch (e) { /* ignore */ }
     }
 
@@ -3744,9 +3831,13 @@
                     const d = metaRoot().director;
                     if (!d || d.concluded) return;
                     d.concluded = true;
+                    metaRoot().cowriterNudged = 'E' + d.episode + '-done'; // conclusion note covers the seed prompt
                     saveMeta();
                     updateSub();
-                    const note = '\uD83C\uDFAC Episode ' + d.episode + ' concluded' + (settings.directorAuto ? ' \u2014 auto-directing the next episode.' : ' \u2014 press \uD83C\uDFAC Next when ready.');
+                    const note = '\uD83C\uDFAC Episode ' + d.episode + ' concluded'
+                        + (settings.directorMode === 'auto' ? ' \u2014 auto-directing the next episode.'
+                            : settings.directorMode === 'cowriter' ? ' \u2014 your turn, co-writer: "#s your premise", \uD83C\uDFAC Seed, or \uD83D\uDCA1 Seed ideas.'
+                                : ' \u2014 press \uD83C\uDFAC Next when ready.');
                     toast(note, 'success');
                     addBubble('note', note);
                     pushHistory('note', note);

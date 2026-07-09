@@ -27,10 +27,11 @@ It runs on a **separate Connection Profile** (never your main roleplay model), s
 - `#o` — harvest OOC/meta asides from the chat and hide them.
 - `#i` — brainstorm distinct directions for what happens next.
 - `#p` — psychology read of a character: drives, contradictions, consistency vs. canon, likely next move.
-- `#d <text>` — steer the Director.
+- `#d <text>` — steer the Director mid-episode.
+- `#s <text>` — co-write: seed the next episode with your own premise; the Director expands it into a hidden episode built around it.
 
 **Two autonomous systems** (opt-in, run on a cadence on the assistant's profile, never on your main model):
-- **Director** — writes secret per-episode directives (hidden `[EPISODE_END]` markers, auto-chaining) that give NPCs and the world their own initiative and give pacing an arc, injected into your storyteller so the world acts *on* the protagonist.
+- **Director** — writes secret per-episode directives (hidden `[EPISODE_END]` markers) that give NPCs and the world their own initiative and give pacing an arc, injected into your storyteller so the world acts *on* the protagonist. Three modes: **Auto** (AI invents and chains episodes on its own), **Co-writer** (each episode grows from *your* one-line seed via `#s`/🎬 Seed — the AI drafts the hidden beats around it, and 💡 Seed ideas proposes three doors when you're blank), and **Off** (manual buttons only). Peek/edit/`#d` work in every mode.
 - **Editor** — standing craft notes injected each turn that correct systemic weaknesses (scenes circling the protagonist, characters/props vanishing, dead ambient world, stale pacing).
 
 **Chat-file naming** — *Auto-name this chat* reads the thread and suggests a distinctive title so branches/checkpoints are tellable apart; *Rename this chat* for a manual name. (Uses ST's `/renamechat`.)
