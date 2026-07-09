@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.37.0';
+    const VERSION = '2.37.1';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -129,6 +129,9 @@
         'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. Under 250 words. Output ONLY the director\'s note text, no preamble.',
     ].join('\n');
 
+    const HOOK_LINE = '5. HOOK \u2014 the landing must leave exactly one thread visibly burning as the seed of the next episode: an unexplained arrival, an overheard fragment, a consequence coming due, a promise or debt created, a rival\'s obsession ignited. Resolution without a new question is forbidden \u2014 an episode that closes everything kills the story. The hook must be EARNED: grow it only from events that actually occurred on screen and from NPC/world motives. NEVER fabricate evidence, coincidences, or player-character mistakes that contradict how carefully the player actually played \u2014 if the player left no opening, the hook comes from motive, suspicion, institutions, third parties, or an unrelated thread instead. Careful play closes doors; it must never be retconned open.';
+    const HOOK_LINE_2370 = '5. HOOK \u2014 the landing must leave exactly one thread visibly burning as the seed of the next episode: an unexplained arrival, an overheard fragment, a consequence coming due, a promise or debt created, a mask slipping half an inch. Resolution without a new question is forbidden \u2014 an episode that closes everything kills the story.';
+
     const DEFAULT_DIRECTOR_PROMPT = [
         'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
         'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
@@ -137,7 +140,7 @@
         '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO or WHAT initiates and the pressure it puts on the player character. At least one beat must come from OUTSIDE the personal cast: the crowd/public, an institution or system, the environment, or chance. Weave ONE light B-beat between the pressure beats \u2014 humor, warmth, rivalry-banter, or a small personal stake among the cast \u2014 the breath between escalations that makes the pressure land harder.',
         '3. NPC & WORLD INITIATIVE \u2014 antagonists, NPCs, and the world itself act first, true to their established methods; the setting should feel alive beyond the main cast.',
         '4. LANDING \u2014 the natural end state of the episode and its consequence.',
-        '5. HOOK \u2014 the landing must leave exactly one thread visibly burning as the seed of the next episode: an unexplained arrival, an overheard fragment, a consequence coming due, a promise or debt created, a mask slipping half an inch. Resolution without a new question is forbidden \u2014 an episode that closes everything kills the story.',
+        HOOK_LINE,
         'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental).',
         'Be bold: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
         'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
@@ -226,7 +229,9 @@
         }
         delete settings.directorAuto;
         // Migration: upgrade the stored director prompt if the user never customized it
-        if (typeof settings.directorPrompt === 'string' && settings.directorPrompt.trim() === LEGACY_DIRECTOR_PROMPT.trim()) {
+        // (covers the pre-2.37.0 default and the 2.37.0 default with the old HOOK line)
+        const legacyPrompts = [LEGACY_DIRECTOR_PROMPT, DEFAULT_DIRECTOR_PROMPT.replace(HOOK_LINE, HOOK_LINE_2370)];
+        if (typeof settings.directorPrompt === 'string' && legacyPrompts.some(p => settings.directorPrompt.trim() === p.trim())) {
             settings.directorPrompt = DEFAULT_DIRECTOR_PROMPT;
         }
         try {
@@ -2396,7 +2401,7 @@
         const role = c.extension_prompt_roles?.SYSTEM ?? 0;
         try {
             const value = (d && d.text)
-                ? "[Director's Note \u2014 secret from the player. Use it to give NPCs initiative and shape the episode, while always adapting to the player's choices instead of forcing outcomes. PACING LAW: open scenes in motion; compress mundane routine (waking, meals, travel, classes without incident) to a single line or skip it with a time-cut unless a beat lives inside it; every reply must advance a beat, reveal something new, or shift a relationship \u2014 never idle daily simulation. When the LANDING state is fully reached and the episode is complete, append the exact marker [EPISODE_END] at the very end of your reply.]\n" + d.text
+                ? "[Director's Note \u2014 secret from the player. Use it to give NPCs initiative and shape the episode, while always adapting to the player's choices instead of forcing outcomes. If the player's choices closed off a planned development, adapt it to what they actually did \u2014 never fabricate player mistakes, evidence, or coincidences to force it through. PACING LAW: open scenes in motion; compress mundane routine (waking, meals, travel, classes without incident) to a single line or skip it with a time-cut unless a beat lives inside it; every reply must advance a beat, reveal something new, or shift a relationship \u2014 never idle daily simulation. When the LANDING state is fully reached and the episode is complete, append the exact marker [EPISODE_END] at the very end of your reply.]\n" + d.text
                 : '';
             c.setExtensionPrompt(DIRECTOR_KEY, value, 1, depth, false, role);
         } catch (e) { console.warn(LOG, 'director injection failed', e); }
