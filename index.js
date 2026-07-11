@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.39.0';
+    const VERSION = '2.40.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -1959,6 +1959,31 @@
         return { ok: false, reason: edit.seenAtReview ? 'memory changed since review \u2014 re-run the audit and apply fresh cards' : '"find" text not located in memory' };
     }
 
+    // A change WE just applied to message i is not staleness: later cards in the
+    // same run that were reviewed together with it must not false-fail their hash
+    // guard. Re-stamp their reviewHash against the message's CURRENT text.
+    // (External edits between review and Apply are still caught — those happen
+    // before the run starts, when the stale stamp is already in place.)
+    function rebaseReviewHashes(list, appliedEdit, ids) {
+        try {
+            const idSet = new Set(ids.map(Number));
+            const chat = ctx().chat || [];
+            let seenSelf = false;
+            for (const e of list) {
+                if (e === appliedEdit) { seenSelf = true; continue; }
+                if (!seenSelf) continue;                       // only LATER cards in this run
+                if (e.kind !== 'chat' || e.bulk) continue;
+                const st = e.status;
+                if (st !== 'pending') continue;
+                if (!idSet.has(Number(e.id))) continue;
+                if (e.reviewHash) {
+                    const m = chat[Number(e.id)];
+                    e.reviewHash = m ? hashText(String(m.mes || '')) : e.reviewHash;
+                }
+            }
+        } catch (err) { /* never let bookkeeping break an apply run */ }
+    }
+
     async function applyEdits(list) {
         const chatApplied = [];
         const memPaths = [];
@@ -1969,6 +1994,7 @@
         // (duplicate that slipped past staging dedup) is marked as such instead of
         // "failing" with a misleading anchor-not-found error.
         const appliedSigs = new Set();
+        const appliedRefs = [];
         for (const edit of list) {
             const st = edit.kind === 'wi' ? edit.editStatus : edit.status;
             if (st !== 'pending') continue;
@@ -1984,6 +2010,7 @@
                     edit.status = 'applied \u2192 ' + res.path + (res.fuzzy ? ' (fuzzy)' : '');
                     memPaths.push(res.path);
                     appliedSigs.add(sig);
+                    appliedRefs.push(edit);
                 } else {
                     edit.status = 'failed: ' + res.reason;
                 }
@@ -1994,6 +2021,7 @@
                     wiApplied.push(res.path);
                     if (!wiBackups.has(res.book)) wiBackups.set(res.book, res.before);
                     appliedSigs.add(sig);
+                    appliedRefs.push(edit);
                 } else {
                     edit.editStatus = 'failed: ' + res.reason;
                 }
@@ -2003,6 +2031,8 @@
                     edit.status = 'applied \u2014 ' + res.affected.length + ' message(s)';
                     for (const a of res.affected) chatApplied.push({ kind: 'chat', id: a.id, before: a.before, beforeSys: a.beforeSys });
                     appliedSigs.add(sig);
+                    rebaseReviewHashes(list, edit, res.affected.map(a => Number(a.id)));
+                    appliedRefs.push(edit);
                 } else if (res.ok) {
                     edit.status = 'no matches \u2014 nothing changed';
                 } else {
@@ -2014,6 +2044,8 @@
                     edit.status = 'applied' + (res.fuzzyNote || '');
                     chatApplied.push({ kind: 'chat', id: edit.id, before: res.before, beforeSys: res.beforeSys });
                     appliedSigs.add(sig);
+                    rebaseReviewHashes(list, edit, [Number(edit.id)]);
+                    appliedRefs.push(edit);
                 } else {
                     edit.status = 'failed: ' + res.reason;
                 }
@@ -2027,7 +2059,7 @@
             if (chatApplied.length) labelParts.push(chatApplied.map(a => '#' + a.id).join(', '));
             if (memPaths.length) labelParts.push('memory: ' + memPaths.join(', '));
             if (wiApplied.length) labelParts.push('worldbook: ' + wiApplied.join(', '));
-            undoStack.push({ label: labelParts.join(' + '), items });
+            undoStack.push({ label: labelParts.join(' + '), items, srcEdits: appliedRefs });
             if (chatApplied.length) await commitChanges(chatApplied.map(a => a.id));
             if (memPaths.length) { saveMeta(); applyCritiqueInjection(); }
             const total = chatApplied.length + memPaths.length + wiApplied.length;
@@ -2089,7 +2121,21 @@
         }
         if (changed.length) await commitChanges(changed);
         if (memRestored) { saveMeta(); applyCritiqueInjection(); }
-        const note = 'Undid edits on ' + batch.label + '.';
+        // Give the cards back: any card this batch applied that is still staged
+        // returns to 'pending' (re-stamped against the restored text), so the user
+        // can adjust and re-apply instead of having to ask the model again.
+        let returned = 0;
+        if (Array.isArray(batch.srcEdits) && batch.srcEdits.length) {
+            const back = [];
+            for (const e of batch.srcEdits) {
+                if (!pendingEdits.includes(e)) continue;
+                if (e.kind === 'wi') e.editStatus = 'pending'; else e.status = 'pending';
+                back.push(e);
+                returned++;
+            }
+            if (back.length) { stampReviewState(back); renderEditCards(); }
+        }
+        const note = 'Undid edits on ' + batch.label + '.' + (returned ? ' ' + returned + ' card(s) returned to pending \u2014 adjust or re-apply.' : '');
         addBubble('note', note);
         pushHistory('note', note);
     }
@@ -2451,11 +2497,20 @@
                 let autoSup = 0;
                 for (const oldE of pendingEdits) {
                     const stOld = oldE.kind === 'wi' ? oldE.editStatus : oldE.status;
-                    if (stOld !== 'pending') continue;
+                    const wasFailed = typeof stOld === 'string' && stOld.indexOf('failed') === 0;
+                    if (stOld !== 'pending' && !wasFailed) continue;
                     if (oldE.edited) continue; // never auto-skip a card the user hand-edited
-                    if (uniqueNew.some(nE => supersededByNew(oldE, nE))) {
-                        if (oldE.kind === 'wi') oldE.editStatus = 'skipped \u2014 superseded by the newest batch';
-                        else oldE.status = 'skipped \u2014 superseded by the newest batch';
+                    // Pending cards: superseded by an identical re-proposal or a refinement.
+                    // FAILED cards: superseded by ANY new proposal to the same concrete
+                    // target — the model was coached to re-propose them corrected, and a
+                    // corrected version has a different anchor by definition, so the
+                    // anchor-equality rule can never match. Either way the failed card is
+                    // dead weight once a successor exists.
+                    const hit = uniqueNew.some(nE => wasFailed ? sameConcreteTarget(oldE, nE) : supersededByNew(oldE, nE));
+                    if (hit) {
+                        const tag = wasFailed ? 'skipped \u2014 replaced after failing' : 'skipped \u2014 superseded by the newest batch';
+                        if (oldE.kind === 'wi') oldE.editStatus = tag;
+                        else oldE.status = tag;
                         autoSup++;
                     }
                 }
@@ -3614,6 +3669,24 @@
         return false;
     }
 
+    // Same concrete, unambiguous target: chat message id (non-bulk), memory path
+    // (non-null, same op shape), or worldbook book#uid content edit. Anchor-agnostic —
+    // used only to retire FAILED cards once any successor targets the same place.
+    function sameConcreteTarget(a, b) {
+        if (a.kind !== b.kind) return false;
+        if (a.kind === 'mem') {
+            const plain = (x) => x.append === undefined && x.remove === undefined;
+            if (!a.path || !b.path) return (a.find !== null && a.find === b.find);
+            return a.path === b.path && plain(a) === plain(b);
+        }
+        if (a.kind === 'wi') {
+            if (a.createBook || b.createBook || a.newEntry || b.newEntry || a.deleteEntry || b.deleteEntry) return false;
+            return a.book === b.book && Number(a.uid) === Number(b.uid);
+        }
+        if (a.bulk || b.bulk) return false;
+        return Number(a.id) === Number(b.id);
+    }
+
     function labelForEdits(list) {
         let cN = 0, mN = 0, wN = 0;
         return list.map(function (edit) {
@@ -3630,7 +3703,13 @@
     function pendingProposalsBlock() {
         if (!pendingEdits.length) return '';
         const clip = function (s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').slice(0, 70); };
-        const lines = labelForEdits(pendingEdits).map(function (x) {
+        const labeledAll = labelForEdits(pendingEdits);
+        const isActive = function (x) {
+            const st = (x.edit.kind === 'wi') ? x.edit.editStatus : x.edit.status;
+            return st === 'pending' || (typeof st === 'string' && st.indexOf('failed') === 0);
+        };
+        const resolved = labeledAll.filter(function (x) { return !isActive(x); });
+        const lines = labeledAll.filter(isActive).map(function (x) {
             const edit = x.edit;
             let target, summary;
             if (edit.kind === 'wi') {
@@ -3649,15 +3728,22 @@
             const status = (edit.kind === 'wi') ? edit.editStatus : edit.status;
             return x.label + ' [' + target + ']' + (status && status !== 'pending' ? ' (' + status + ')' : '') + ': ' + summary + (edit.reason ? ' \u2014 ' + edit.reason : '');
         });
-        const failed = labelForEdits(pendingEdits).filter(function (x) {
+        const failed = labeledAll.filter(function (x) {
             const stx = (x.edit.kind === 'wi') ? x.edit.editStatus : x.edit.status;
             return typeof stx === 'string' && stx.indexOf('failed') === 0;
         }).map(function (x) { return x.label; });
         const failNote = failed.length
             ? ('\n\nSOME PROPOSALS FAILED TO APPLY: ' + failed.join(', ') + '. They failed because the "find" excerpt did not match the source text exactly \u2014 either it was paraphrased instead of copied, OR it tried to do too much at once. To fix each: for a CHAT edit, if you do NOT already have that message\'s FULL text above, <fetch> that message first and copy the "find" verbatim; for a MEMORY edit, copy the "find" CHARACTER-FOR-CHARACTER from [STORY MEMORY]. Never paraphrase. CRUCIAL: keep each edit TINY \u2014 correct only the specific wrong words. A "find" must be ONE contiguous run that ALREADY EXISTS verbatim: do NOT stitch two fields or two thread entries together (they are stored separately and can never match as one block), and find/replace can NEVER add new sentences or new threads (it only changes text that is already there). If a big change is needed, break it into several tiny edits or a single whole-field "path" replace. If unsure, the one wrong word can be the whole "find" (e.g. find "Two-fourteen", replace "Two-thirty-eight"). Do not drop them silently.')
             : '';
+        const resolvedNote = resolved.length
+            ? '\n\nResolved earlier (applied or skipped \u2014 do NOT re-propose these): ' + resolved.map(function (x) {
+                const st = String((x.edit.kind === 'wi') ? x.edit.editStatus : x.edit.status);
+                return x.label + ' (' + (st.indexOf('applied') === 0 ? 'applied' : 'skipped') + ')';
+            }).join(', ')
+            : '';
         return '[PENDING PROPOSALS \u2014 you already proposed these; they are NOT yet applied and are awaiting the user]\n' +
-            lines.join('\n') +
+            (lines.length ? lines.join('\n') : '(none awaiting action)') +
+            resolvedNote +
             failNote +
             '\n\nWhen you next propose edits: only propose NEW fixes. If you are CORRECTING or REPLACING any pending proposal above, do NOT re-list it as-is \u2014 name its exact label(s) in a <supersede> block (e.g. <supersede>Memory fix 1, Chat fix 2</supersede>) and give the corrected version as a fresh edit; the superseded ones are auto-skipped so "Apply all" stays clean. Refer to these by their labels when you talk to the user.';
     }
@@ -3686,9 +3772,15 @@
 
         const head = document.createElement('div');
         head.className = 'cc_edits_head';
-        head.innerHTML = '<span>Proposed edits: ' + pendingEdits.length + '</span>' +
+        const statOf = (e) => String(e.kind === 'wi' ? e.editStatus : e.status);
+        const nPending = pendingEdits.filter(e => statOf(e) === 'pending').length;
+        const nFailed = pendingEdits.filter(e => statOf(e).indexOf('failed') === 0).length;
+        const nDone = pendingEdits.length - nPending - nFailed;
+        head.innerHTML = '<span>Proposed edits: ' + pendingEdits.length + (nPending !== pendingEdits.length ? ' (' + nPending + ' pending)' : '') + '</span>' +
             '<button class="cc_btn" id="cc_toggleedits">' + (editsCollapsed ? 'Show' : 'Hide') + '</button>' +
             '<button class="cc_btn cc_primary" id="cc_applyall">Apply all pending</button>' +
+            (nFailed ? '<button class="cc_btn" id="cc_reproposefail" title="Ask the assistant to re-read the current text and send corrected versions of the failed fixes">\uD83D\uDD01 Re-propose ' + nFailed + ' failed</button>' : '') +
+            (nDone ? '<button class="cc_btn" id="cc_cleardone" title="Remove applied/skipped cards from the list">\uD83E\uDDF9 Clear ' + nDone + ' done</button>' : '') +
             '<button class="cc_btn" id="cc_dismissall">Dismiss</button>';
         frag.appendChild(head);
 
@@ -3775,6 +3867,17 @@
         el('cc_dismissall')?.addEventListener('click', () => {
             pendingEdits = [];
             renderEditCards();
+        });
+        el('cc_cleardone')?.addEventListener('click', () => {
+            pendingEdits = pendingEdits.filter(e => {
+                const st = String(e.kind === 'wi' ? e.editStatus : e.status);
+                return st === 'pending' || st.indexOf('failed') === 0;
+            });
+            renderEditCards();
+        });
+        el('cc_reproposefail')?.addEventListener('click', () => {
+            if (running) { toast('Busy \u2014 wait for the current run to finish.', 'warning'); return; }
+            send('The failed proposals listed under PENDING PROPOSALS could not be applied. Re-read the CURRENT text of each target (fetch chat messages if you only have previews; re-read [STORY MEMORY] for memory fixes), then re-propose each fix corrected \u2014 copy every "find" verbatim from the current text. Do not re-send proposals that are no longer needed.');
         });
         el('cc_toggleedits')?.addEventListener('click', () => {
             editsCollapsed = !editsCollapsed;
