@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.38.0';
+    const VERSION = '2.39.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -1644,7 +1644,15 @@
                 }
             }
             if (loc && loc.ambiguous) return { ok: false, reason: 'anchor matches ' + (typeof loc.ambiguous === 'number' ? loc.ambiguous + ' places' : 'multiple similar places') + ' in this message \u2014 give a longer unique excerpt' };
-            if (!loc) return { ok: false, reason: edit.seenAtReview ? 'message changed since review \u2014 regenerate and apply fresh cards' : '"find" text not located (even fuzzy)' };
+            if (!loc) {
+                // Most common cause after an "ask again then Apply all": an earlier card
+                // (or an earlier batch) already made this exact change. Say so instead of
+                // the misleading "changed since review".
+                if (typeof effReplace === 'string' && effReplace.length >= 8 && countOccurrences(before, effReplace) > 0) {
+                    return { ok: false, reason: 'nothing to change \u2014 the replacement text is already in this message (this fix was applied earlier)' };
+                }
+                return { ok: false, reason: edit.seenAtReview ? 'message changed since review \u2014 regenerate and apply fresh cards' : '"find" text not located (even fuzzy)' };
+            }
             next = before.slice(0, loc.start) + effReplace + before.slice(loc.end);
             if (loc.fuzzy) fuzzyNote = ' (fuzzy match ' + Math.round(loc.sim * 100) + '%)';
         }
@@ -1945,6 +1953,9 @@
                 return { ok: true, path: exKey, fuzzy: !!exLoc.fuzzy };
             }
         }
+        if (typeof edit.replace === 'string' && edit.replace.length >= 8 && memCountExact(edit.replace) > 0) {
+            return { ok: false, reason: 'nothing to change \u2014 the replacement text is already in memory (this fix was applied earlier)' };
+        }
         return { ok: false, reason: edit.seenAtReview ? 'memory changed since review \u2014 re-run the audit and apply fresh cards' : '"find" text not located in memory' };
     }
 
@@ -1954,14 +1965,25 @@
         const wiApplied = [];
         const keyBackups = new Map();
         const wiBackups = new Map();
+        // Signatures of edits already applied in THIS run: a later identical card
+        // (duplicate that slipped past staging dedup) is marked as such instead of
+        // "failing" with a misleading anchor-not-found error.
+        const appliedSigs = new Set();
         for (const edit of list) {
             const st = edit.kind === 'wi' ? edit.editStatus : edit.status;
             if (st !== 'pending') continue;
+            const sig = editSig(edit);
+            if (appliedSigs.has(sig)) {
+                if (edit.kind === 'wi') edit.editStatus = 'applied earlier \u2014 duplicate card';
+                else edit.status = 'applied earlier \u2014 duplicate card';
+                continue;
+            }
             if (edit.kind === 'mem') {
                 const res = applyMemOne(edit, keyBackups);
                 if (res.ok) {
                     edit.status = 'applied \u2192 ' + res.path + (res.fuzzy ? ' (fuzzy)' : '');
                     memPaths.push(res.path);
+                    appliedSigs.add(sig);
                 } else {
                     edit.status = 'failed: ' + res.reason;
                 }
@@ -1971,6 +1993,7 @@
                     edit.editStatus = 'applied \u2192 WB ' + res.path;
                     wiApplied.push(res.path);
                     if (!wiBackups.has(res.book)) wiBackups.set(res.book, res.before);
+                    appliedSigs.add(sig);
                 } else {
                     edit.editStatus = 'failed: ' + res.reason;
                 }
@@ -1979,6 +2002,7 @@
                 if (res.ok && res.affected.length) {
                     edit.status = 'applied \u2014 ' + res.affected.length + ' message(s)';
                     for (const a of res.affected) chatApplied.push({ kind: 'chat', id: a.id, before: a.before, beforeSys: a.beforeSys });
+                    appliedSigs.add(sig);
                 } else if (res.ok) {
                     edit.status = 'no matches \u2014 nothing changed';
                 } else {
@@ -1989,6 +2013,7 @@
                 if (res.ok) {
                     edit.status = 'applied' + (res.fuzzyNote || '');
                     chatApplied.push({ kind: 'chat', id: edit.id, before: res.before, beforeSys: res.beforeSys });
+                    appliedSigs.add(sig);
                 } else {
                     edit.status = 'failed: ' + res.reason;
                 }
@@ -2408,14 +2433,44 @@
             }
             if (allEdits.length) {
                 editsCollapsed = false;
-                stampReviewState(allEdits);
+                // Merge exact duplicates the model emitted twice in the SAME reply.
+                const seenSigs = new Set();
+                const uniqueNew = [];
+                let intraDups = 0;
+                for (const e of allEdits) {
+                    const s = editSig(e);
+                    if (seenSigs.has(s)) { intraDups++; continue; }
+                    seenSigs.add(s);
+                    uniqueNew.push(e);
+                }
+                // Auto-supersede: if the user asked again without applying, the model
+                // re-sends (or refines) the same fixes. Applying both copies would make
+                // the second fail — its anchor is consumed by the first — so the OLD
+                // pending card is skipped deterministically; no reliance on the model
+                // remembering to emit a <supersede> block.
+                let autoSup = 0;
+                for (const oldE of pendingEdits) {
+                    const stOld = oldE.kind === 'wi' ? oldE.editStatus : oldE.status;
+                    if (stOld !== 'pending') continue;
+                    if (oldE.edited) continue; // never auto-skip a card the user hand-edited
+                    if (uniqueNew.some(nE => supersededByNew(oldE, nE))) {
+                        if (oldE.kind === 'wi') oldE.editStatus = 'skipped \u2014 superseded by the newest batch';
+                        else oldE.status = 'skipped \u2014 superseded by the newest batch';
+                        autoSup++;
+                    }
+                }
+                stampReviewState(uniqueNew);
                 const batchNo = (pendingEdits.reduce((mx, e) => Math.max(mx, e.batch || 0), 0)) + 1;
-                allEdits.forEach(e => { e.batch = batchNo; });
+                uniqueNew.forEach(e => { e.batch = batchNo; });
                 if (pendingEdits.length) {
-                    pendingEdits = pendingEdits.concat(allEdits);
-                    addBubble('note', '\u2795 ' + allEdits.length + ' new proposal(s) added below your ' + (pendingEdits.length - allEdits.length) + ' still-pending one(s). Review all together, or Dismiss to clear.');
+                    pendingEdits = pendingEdits.concat(uniqueNew);
+                    let msg = '\u2795 ' + uniqueNew.length + ' new proposal(s) added below your still-pending one(s).';
+                    if (autoSup) msg += ' ' + autoSup + ' older duplicate(s) auto-skipped \u2014 "Apply all" applies only the newest version of each fix.';
+                    if (intraDups) msg += ' (' + intraDups + ' duplicate(s) within the reply merged.)';
+                    addBubble('note', msg + ' Review all together, or Dismiss to clear.');
                 } else {
-                    pendingEdits = allEdits;
+                    pendingEdits = uniqueNew;
+                    if (intraDups) addBubble('note', intraDups + ' duplicate proposal(s) within the reply merged.');
                 }
             }
             if (didSupersede) addBubble('note', '\u21A9 Auto-skipped ' + didSupersede + ' proposal(s) the assistant replaced \u2014 "Apply all" will ignore them.');
@@ -3511,6 +3566,54 @@
 
     // Consistent per-kind labels for pending edits: "Chat fix 1", "Memory fix 1", "Worldbook fix 1".
     // Used identically by the cards, the assistant-awareness block, and supersede matching.
+    // Canonical signature of an edit: two edits with the same signature do the same
+    // thing to the same target. Used to (a) merge duplicates the model emits twice in
+    // one reply, (b) auto-supersede an older pending proposal when the model re-sends
+    // it in a new batch, and (c) refuse to double-apply within one "Apply all" run.
+    function editSig(e) {
+        const S = (v) => v === undefined ? null : (v !== null && typeof v === 'object' ? JSON.stringify(v) : v);
+        if (e.kind === 'mem') return JSON.stringify(['mem', S(e.path), S(e.find), S(e.replace), S(e.append), S(e.remove)]);
+        if (e.kind === 'wi') return JSON.stringify(['wi', S(e.book), S(e.uid), S(e.find), e.hasContent ? S(e.replace) : null, S(e.setKeys), S(e.setSecondaryKeys), !!e.newEntry, !!e.deleteEntry, !!e.createBook, S(e.comment), S(e.status_type), S(e.constant), S(e.disable), S(e.position), S(e.depth), S(e.order), S(e.probability), S(e.role)]);
+        if (e.bulk) return JSON.stringify(['bulk', S(e.find), S(e.replace), S(e.range), S(e.ids)]);
+        return JSON.stringify(['chat', Number(e.id), S(e.hide), S(e.find), S(e.replace)]);
+    }
+
+    // Does a NEW proposal make an OLD pending one obsolete? True for an identical
+    // re-proposal, and for a REFINEMENT: same target + same anchor (or both
+    // whole-replaces of the same target) with different replacement text. Applying
+    // both is impossible anyway — the first consumes the anchor and the second dies —
+    // so the newest version is the model's current intent and the old card is noise.
+    // Deliberately conservative: hide toggles, append/remove ops, and wi structural
+    // ops (create/delete/new-entry) supersede only on an exact signature match.
+    function supersededByNew(oldE, newE) {
+        if (oldE.kind !== newE.kind) return false;
+        if (editSig(oldE) === editSig(newE)) return true;
+        if (oldE.kind === 'mem') {
+            const plain = (x) => x.append === undefined && x.remove === undefined;
+            if (!plain(oldE) || !plain(newE)) return false;
+            if ((oldE.path || null) !== (newE.path || null)) return false;
+            if (oldE.find !== null && oldE.find === newE.find) return true;
+            if (oldE.find == null && newE.find == null && oldE.path) return true;
+            return false;
+        }
+        if (oldE.kind === 'wi') {
+            if (oldE.createBook || newE.createBook || oldE.deleteEntry || newE.deleteEntry || oldE.newEntry || newE.newEntry) return false;
+            if (oldE.book !== newE.book || Number(oldE.uid) !== Number(newE.uid)) return false;
+            if (!oldE.hasContent || !newE.hasContent) return false;
+            if (oldE.find !== null && oldE.find === newE.find) return true;
+            if (oldE.find == null && newE.find == null) return true;
+            return false;
+        }
+        if (oldE.bulk || newE.bulk) return false;
+        if (Number(oldE.id) !== Number(newE.id)) return false;
+        const oh = oldE.hide !== null && oldE.hide !== undefined;
+        const nh = newE.hide !== null && newE.hide !== undefined;
+        if (oh || nh) return false;
+        if (oldE.find !== null && oldE.find === newE.find) return true;
+        if (oldE.find == null && newE.find == null) return true;
+        return false;
+    }
+
     function labelForEdits(list) {
         let cN = 0, mN = 0, wN = 0;
         return list.map(function (edit) {
@@ -3646,7 +3749,7 @@
             const sstr = typeof st === 'string' ? st : '';
             if (sstr.indexOf('applied') === 0) card.style.cssText = 'border-left:3px solid rgba(90,200,130,0.9);opacity:0.58;';
             else if (sstr.indexOf('failed') === 0) card.style.cssText = 'border-left:3px solid rgba(235,150,55,0.95);background:rgba(235,150,55,0.07);';
-            else if (sstr === 'skipped') card.style.cssText = 'opacity:0.5;';
+            else if (sstr.indexOf('skipped') === 0) card.style.cssText = 'opacity:0.5;';
             // Which cards support inline replacement-text editing: anything with a replace/content payload.
             const canEditText = !edit.deleteEntry && !(edit.hide !== null && edit.hide !== undefined && edit.find == null && !edit.replace) && (edit.replace !== undefined) && edit.remove === undefined;
             card.innerHTML =
