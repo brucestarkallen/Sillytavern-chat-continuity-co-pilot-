@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.43.0';
+    const VERSION = '2.44.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -49,6 +49,8 @@
         '- [MESSAGE INDEX]: one line per chat message: #id [speaker] preview.',
         '- [FULL MESSAGES]: complete text of some messages.',
         '- [CONTINUITY FLAGS] (when present): source-level contradictions Summaryception\'s memory auditor found between a chat message and established canon \u2014 fix each in the chat message it names.',
+        '- [DIRECTOR NOTES] (when a directive is active): the secret episode plan \u2014 author-level; readable and discussable with the user, but planned beats are INTENT, not canon.',
+        '- [EDITOR CRITIQUE] (when present): the standing craft notes currently injected to the storyteller.',
         '- The user\'s request and your previous conversation with them.',
         '',
         'Rules:',
@@ -1066,6 +1068,24 @@
         } catch (_) { return ''; }
     }
 
+    // Author-level blocks: the secret directive and the standing critique. The
+    // labels are self-describing on purpose — they reach users with customized
+    // system prompts too. Key semantic: directive beats are PLANS, not canon.
+    function authorLevelBlock(director, critique) {
+        const parts = [];
+        if (director && director.text) {
+            parts.push('[DIRECTOR NOTES \u2014 Episode ' + (Number(director.episode) || 1) + (director.concluded ? ' (concluded)' : ' (in progress)') + ']');
+            parts.push('(Secret from the player-character; you and the user are AUTHOR-level and may read and discuss it freely. These are the director\'s PLANNED beats and intent \u2014 only events actually narrated in chat messages are canon. Use this to audit consistency, judge whether story text matches the planned arc, and answer the user\'s questions about the plan. Never treat an unplayed beat as something that already happened, and do not spoil unrevealed beats in replies unless the user\'s question touches them.)');
+            parts.push(String(director.text));
+        }
+        if (critique && String(critique).trim()) {
+            parts.push('');
+            parts.push('[EDITOR CRITIQUE \u2014 standing craft notes injected to the storyteller]');
+            parts.push(String(critique));
+        }
+        return parts.length ? '\n\n' + parts.join('\n') : '';
+    }
+
     function buildContextBlock() {
         const chat = ctx().chat || [];
         const n = Math.max(0, Math.min(100, Number(settings.recentFull) || 0));
@@ -1081,7 +1101,8 @@
             '[FULL MESSAGES] (last ' + ids.length + ')',
             ids.length ? fullTextOf(ids) : '(none)',
         ].join('\n');
-        return base + buildContinuityFlags();
+        const author = authorLevelBlock(metaRoot().director, ctx().chatMetadata?.cc_critique);
+        return base + author + buildContinuityFlags();
     }
 
     const WI_RULES = [
