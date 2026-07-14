@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.44.1';
+    const VERSION = '2.45.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -189,7 +189,7 @@
         includeAuthorsNote: true,
         streaming: true,
         showThinking: true,
-        directorIntensity: 'standard',
+        directorIntensity: 'auto',
         directorAnchors: '',
         directorDepth: 4,
         directorPrompt: DEFAULT_DIRECTOR_PROMPT,
@@ -2814,8 +2814,9 @@
 
     function directorAuthorPrompt(mode) {
         const intensity = settings.directorIntensity || 'standard';
+        const AUTO_INTENSITY = 'AUTO \u2014 you choose it, episode by episode: read the recent story temperature and the previous directive\'s "Intensity:" line. After a heavy, costly, or climactic episode, drop to a lower-intensity breather that develops characters and lets consequences settle; when recent episodes have run quiet or safe, escalate; when the ARC nears a peak (roughly every third episode), push toward its ceiling. Honor the intensity a seed implies. Never hold the same level three episodes in a row. Open the note with one line: "Intensity: <slow-burn|standard|intense>" so the next episode can modulate against it';
         const anchors = String(settings.directorAnchors || '').trim();
-        let base = String(settings.directorPrompt || DEFAULT_DIRECTOR_PROMPT).replace('INTENSITY_LEVEL', intensity);
+        let base = String(settings.directorPrompt || DEFAULT_DIRECTOR_PROMPT).replace('INTENSITY_LEVEL', intensity === 'auto' ? AUTO_INTENSITY : intensity);
         const extra = [];
         if (anchors) {
             extra.push('Pacing reference (RHYTHM and episode structure ONLY \u2014 never import their characters, names, plots, or lines): ' + anchors);
@@ -3417,7 +3418,7 @@
             '<div class="cc_check"><input type="checkbox" id="cc_an"><span>Include Author\'s Note in story memory</span></div>',
             '<div style="margin:10px 0 2px;font-weight:600;opacity:0.75;">Director & Editor</div>',
             '<div class="cc_row">',
-            '  <div><label>Director intensity</label><select id="cc_dir_int"><option value="slow-burn">slow-burn</option><option value="standard">standard</option><option value="intense">intense</option></select></div>',
+            '  <div><label>Director intensity</label><select id="cc_dir_int"><option value="auto">auto (self-calibrating)</option><option value="slow-burn">slow-burn</option><option value="standard">standard</option><option value="intense">intense</option></select></div>',
             '  <div><label>Director depth</label><input type="number" id="cc_dir_depth" min="0" max="20"></div>',
             '  <div><label>Critique depth</label><input type="number" id="cc_crit_depth" min="0" max="30"></div>',
             '</div>',
