@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.46.0';
+    const VERSION = '2.47.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -2949,17 +2949,29 @@
     }
 
     function clearDirective() {
-        if (!metaRoot().director) { toast('No directive active.', 'warning'); return; }
-        if (!confirm('End the current season? This removes the secret directive and resets episode numbering \u2014 the next episode will be Episode 1. (To pause the Director without resetting, switch its mode to Off in settings.)')) return;
+        const d = metaRoot().director;
+        if (!d) { toast('No directive active.', 'warning'); return; }
+        if (!confirm('End the current season? This removes the secret directive and resets episode numbering \u2014 the next episode will be Episode 1. I\'ll then audit story memory for residue from planned-but-unplayed beats and propose removals as cards. (To pause the Director without resetting, switch its mode to Off in settings.)')) return;
+        const clearedText = String(d.text || '');   // captured BEFORE nulling — the audit needs to know what was planned
         metaRoot().director = null;
         metaRoot().directorEp = 0;          // season over: numbering restarts at 1
         delete metaRoot().cowriterNudged;   // fresh season gets a fresh co-writer nudge
         saveMeta();
         applyInjections();
-        const note = '\uD83C\uDFAC Directive cleared \u2014 season ended. Numbering reset: the next episode will be Episode 1. Note: story memory (ledger/summaries) may still hold residue from planned-but-unplayed beats of the old season \u2014 say "audit memory for leftovers from the cleared season" and I\'ll scan and propose removals.';
+        const note = '\uD83C\uDFAC Directive cleared \u2014 season ended. The next episode will be Episode 1.';
         addBubble('note', note);
         pushHistory('note', note);
         updateSub();
+        // Automation over instructions: run the residue audit through the normal
+        // pipeline (fetch, staging, dedup, Apply/Skip cards) — the user reviews
+        // deletions on cards instead of having to know a magic phrase.
+        if (clearedText) {
+            if (running) {
+                addBubble('note', 'Copilot is busy \u2014 when it finishes, say "audit memory for leftovers from the cleared season" and I\'ll scan then.');
+            } else {
+                send('The season just ended and its secret directive (below) was cleared. Audit story memory \u2014 ledger entries, open threads, notepad, summaries \u2014 for residue describing this directive\'s planned-but-unplayed beats: events, notices, scenes, or agendas that were PLANNED but never actually narrated on screen. Compare against what the chat actually shows (fetch messages if previews are not enough). Propose removals or corrections as memory-edit cards; also propose chat edits to scrub any machine-note blocks in messages that still carry the dead plan. Do not touch memory that reflects events that truly happened.\n\n[CLEARED DIRECTIVE]\n' + clearedText);
+            }
+        }
     }
 
     async function directorEdit(instruction) {
