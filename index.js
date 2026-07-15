@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.49.0';
+    const VERSION = '2.50.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -1178,7 +1178,7 @@
         const parts = [];
         if (director && director.text) {
             parts.push('[DIRECTOR NOTES \u2014 Episode ' + (Number(director.episode) || 1) + (director.concluded ? ' (concluded)' : ' (in progress)') + ']');
-            parts.push('(Secret from the player-character; you and the user are AUTHOR-level and may read and discuss it freely. These are the director\'s PLANNED beats and intent \u2014 only events actually narrated in chat messages are canon. Use this to audit consistency, judge whether story text matches the planned arc, and answer the user\'s questions about the plan. Never treat an unplayed beat as something that already happened, and do not spoil unrevealed beats in replies unless the user\'s question touches them.)');
+            parts.push('(Secret from the player-character; you and the user are AUTHOR-level and may read and discuss it freely. To REVISE it, propose a memedit with path "' + MODULE + '.director.text" and the full replacement note text \u2014 that is the only writable field here; the episode number and progress are machine-owned. These are the director\'s PLANNED beats and intent \u2014 only events actually narrated in chat messages are canon. Use this to audit consistency, judge whether story text matches the planned arc, and answer the user\'s questions about the plan. Never treat an unplayed beat as something that already happened, and do not spoil unrevealed beats in replies unless the user\'s question touches them.)');
             parts.push(String(director.text));
         }
         if (critique && String(critique).trim()) {
@@ -1977,8 +1977,21 @@
             if (!tokens.length) return { ok: false, reason: 'bad path' };
             const rootKey = tokens[0];
             const extraOk = rootKey === 'note_prompt' || rootKey === 'cc_critique';
-            if (rootKey === MODULE || (!re.test(rootKey) && !extraOk)) {
-                return { ok: false, reason: 'path not in memory scope' };
+            // The secret directive lives inside our OWN module metadata, which is
+            // otherwise closed (the copilot must never rewrite its session history,
+            // pending cards or undo stack). But the directive is AUTHOR-level content
+            // the user edits through us: v2.44.0 gave read access and no writable
+            // path, so the copilot could discuss the episode plan and then had to ask
+            // the user where it lived — correctly refusing to guess. Exactly one path
+            // is opened, the note text itself; episode/concluded stay machine-owned.
+            const dirPath = (rootKey === MODULE && tokens.length === 3 && tokens[1] === 'director' && tokens[2] === 'text');
+            if ((rootKey === MODULE && !dirPath) || (!re.test(rootKey) && !extraOk && !dirPath)) {
+                return { ok: false, reason: rootKey === MODULE
+                    ? 'only ' + MODULE + '.director.text is editable in this module — session state is machine-owned'
+                    : 'path not in memory scope' };
+            }
+            if (dirPath && !metaRoot().director) {
+                return { ok: false, reason: 'no directive is active — use \uD83C\uDFAC New/Next to create one before editing it' };
             }
             if (md[rootKey] == null) {
                 if (extraOk && tokens.length === 1) md[rootKey] = '';
