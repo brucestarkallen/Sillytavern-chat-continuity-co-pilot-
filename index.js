@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.45.0';
+    const VERSION = '2.46.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -156,7 +156,8 @@
         'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. Under 300 words. Output ONLY the director\'s note text, no preamble.',
     ].join('\n');
 
-    const DEFAULT_DIRECTOR_PROMPT = [
+    // Verbatim 2.41\u20132.45 default \u2014 kept only so stored copies auto-upgrade.
+    const LEGACY_DIRECTOR_PROMPT_V241 = [
         'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
         'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
         'The note must contain:',
@@ -168,6 +169,24 @@
         '6. ARC \u2014 one sentence naming the season-level thread this episode advances (a gathering antagonist, a deepening mystery, a slow-burn bond, a rising institution) and how this episode moves it one visible step. Carry the previous directive\'s ARC forward and advance it \u2014 never restate it unchanged; if it resolved or went stale, promote the HOOK into the new ARC. Roughly every third episode, let the ARC itself take the A-plot.',
         'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental) AND vary episode shape (investigation, trial or gauntlet, siege or defense, infiltration, social battlefield, hunt, revelation, calm-before-storm) \u2014 never repeat the previous episode\'s shape.',
         'Be bold: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
+        'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
+        'Honor any [editor notes] standing corrections present in the context \u2014 the episode you design must not repeat faults the editor has flagged.',
+        'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. An episode spans multiple scenes \u2014 never compress its whole arc into one scene, never pad past the landing. Under 340 words. Output ONLY the director\'s note text, no preamble.',
+    ].join('\n');
+
+    const DEFAULT_DIRECTOR_PROMPT = [
+        'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
+        'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
+        'The note must contain:',
+        '1. EPISODE PREMISE \u2014 one television-episode-quality premise rising naturally from existing threads. The episode opens already in motion \u2014 never with waking up, routine, or empty transit.',
+        '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO or WHAT initiates and the pressure it puts on the player character. At least one beat must come from OUTSIDE the personal cast: the crowd/public, an institution or system, the environment, or chance. One mid-episode beat must be a TURN that changes the shape of the problem \u2014 a reveal, a reversal, an ally or enemy switching roles, or the obvious solution creating a worse problem \u2014 not merely louder pressure. The final beat must corner the player in a DILEMMA: every option costs something they value (the secret, an ally, a principle, an advantage) \u2014 competence alone must not be enough to walk away unpaid. Weave ONE light B-beat between the pressure beats \u2014 humor, warmth, rivalry-banter, or a small personal stake among the cast \u2014 the breath that makes the pressure land harder.',
+        '3. NPC & WORLD INITIATIVE \u2014 antagonists, NPCs, and the world itself act first, true to their established methods; the setting should feel alive beyond the main cast.',
+        '4. LANDING \u2014 the natural end state of the episode and its consequence. The landing must permanently change at least one standing fact \u2014 a relationship, a reputation, a resource, a position, or a piece of knowledge \u2014 that future episodes inherit. Episodes that reset to the status quo are forbidden.',
+        HOOK_LINE + ' Plant the hook\'s seed visibly at least one beat before the landing, so the ending pays off something the player already glimpsed.',
+        '6. ARC \u2014 one sentence naming the season-level thread this episode advances (a gathering antagonist, a deepening mystery, a slow-burn bond, a rising institution) and how this episode moves it one visible step. Carry the previous directive\'s ARC forward and advance it \u2014 never restate it unchanged; if it resolved or went stale, promote the HOOK into the new ARC. Roughly every third episode, let the ARC itself take the A-plot.',
+        'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental) AND vary episode shape (investigation, trial or gauntlet, siege or defense, infiltration, social battlefield, hunt, revelation, calm-before-storm) \u2014 never repeat the previous episode\'s shape.',
+        'STAKES LAW \u2014 every stake must be one the world\'s standing rules actually produce. Check each beat against [WORLD RULES] and established canon: if the setting declares a thing legal, routine, or harmless, no institution or NPC may treat it as criminal, catastrophic, or lethal \u2014 and use the pressures the world DOES make real (rivalry, wounded pride, gossip, curiosity, politics answered in kind), scaled to the actual event. A dilemma built on a false stake is a broken episode, not a bold one. Drama is not bigger \u2014 it is TRUER.',
+        'Be bold within the world\'s logic: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
         'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
         'Honor any [editor notes] standing corrections present in the context \u2014 the episode you design must not repeat faults the editor has flagged.',
         'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. An episode spans multiple scenes \u2014 never compress its whole arc into one scene, never pad past the landing. Under 340 words. Output ONLY the director\'s note text, no preamble.',
@@ -260,7 +279,7 @@
         delete settings.directorAuto;
         // Migration: upgrade the stored director prompt if the user never customized it
         // (covers the pre-2.37.0 default and the 2.37.0 default with the old HOOK line)
-        const legacyPrompts = [LEGACY_DIRECTOR_PROMPT, LEGACY_DIRECTOR_PROMPT_V240.replace(HOOK_LINE, HOOK_LINE_2370), LEGACY_DIRECTOR_PROMPT_V240];
+        const legacyPrompts = [LEGACY_DIRECTOR_PROMPT, LEGACY_DIRECTOR_PROMPT_V240.replace(HOOK_LINE, HOOK_LINE_2370), LEGACY_DIRECTOR_PROMPT_V240, LEGACY_DIRECTOR_PROMPT_V241];
         if (typeof settings.directorPrompt === 'string' && legacyPrompts.some(p => settings.directorPrompt.trim() === p.trim())) {
             settings.directorPrompt = DEFAULT_DIRECTOR_PROMPT;
         }
@@ -741,6 +760,49 @@
             const arr = JSON.parse(m[0]);
             return Array.isArray(arr) ? arr.map(String) : null;
         } catch (e) { return null; }
+    }
+
+    // Pure: format always-on worldbook entries into the [WORLD RULES] block, hard
+    // character cap with an honest truncation note. Self-describing label so the
+    // planning model knows these are the setting's standing laws, not suggestions.
+    function _formatWorldRules(entries, capChars) {
+        if (!Array.isArray(entries) || entries.length === 0) return '';
+        const cap = Math.max(500, capChars | 0);
+        const head = '[WORLD RULES \u2014 always-on worldbook entries the storyteller receives. These are the setting\'s standing laws: institutions, customs, magic, politics, what things actually cost. Every stake and consequence you plan MUST be one these rules actually produce.]';
+        const parts = [];
+        let used = 0;
+        let omitted = 0;
+        for (const e of entries) {
+            const label = ((e.comment || '').trim() || (e.book + '#' + e.uid));
+            const piece = '\u2022 ' + label + ': ' + String(e.content || '').trim();
+            if (used + piece.length > cap) { omitted++; continue; }
+            parts.push(piece);
+            used += piece.length + 1;
+        }
+        if (!parts.length) return '';
+        let out = '\n\n' + head + '\n' + parts.join('\n');
+        if (omitted > 0) out += '\n(+' + omitted + ' more always-on entr' + (omitted === 1 ? 'y' : 'ies') + ' omitted for length \u2014 fetch via worldbook tools if needed)';
+        return out;
+    }
+
+    // Always-on (constant) worldbook entries = the story bible the STORYTELLER gets
+    // injected but the director historically never saw — it planned episodes in a
+    // rules vacuum and filled the gap with trope stakes the premise couldn't support.
+    async function worldRulesBlock() {
+        try {
+            const books = wiEffectiveBooks();
+            if (!books.length) return '';
+            const entries = [];
+            for (const book of books) {
+                const data = await wiLoad(book);
+                if (!data) continue;
+                for (const e of wiEntryList(data)) {
+                    if (!e || e.disable || !e.constant) continue;
+                    entries.push({ book, uid: e.uid, comment: e.comment, content: e.content });
+                }
+            }
+            return _formatWorldRules(entries, 7000);
+        } catch (err) { return ''; }
     }
 
     async function wiFullText(refs) {
@@ -2770,7 +2832,7 @@
                 'Standing notes are for SYSTEMIC patterns only; do not add a note for a one-off slip that a single chat edit could fix.',
                 'Write numbered standing corrections \u2014 as many as the story genuinely needs, no maximum. Each must be actionable and general enough to keep applying (e.g. "Track every named character present in a scene until they visibly exit"). Carry forward still-relevant items from [CURRENT NOTES] if provided. Optimize for perfection, immersion, engagement, and realism \u2014 while staying token-efficient: no padding, no repetition, no filler; every line must earn its place. Output ONLY the notes.',
             ].join('\n');
-            const user = buildContextBlock() + (cur ? '\n\n[CURRENT NOTES]\n' + cur : '') + '\n\nWrite the standing notes now.';
+            const user = buildContextBlock() + (await worldRulesBlock()) + (cur ? '\n\n[CURRENT NOTES]\n' + cur : '') + '\n\nWrite the standing notes now.';
             const sp = await callLLMSmart([
                 { role: 'system', content: sys },
                 { role: 'user', content: user },
@@ -2841,7 +2903,7 @@
         const chatAt = chatRef();
         try {
             const prev = metaRoot().director;
-            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '')
+            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '') + (await worldRulesBlock())
                 + ((mode === 'next' || mode === 'seed') && prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded]\n' + prev.text : '')
                 + (mode === 'seed' ? '\n\n[PLAYER\'S EPISODE SEED]\n' + String(seedText || '').trim() : '')
                 + '\n\nWrite the director\'s note now.';
@@ -2908,7 +2970,7 @@
         const chatAt = chatRef();
         try {
             const prev = metaRoot().director;
-            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '')
+            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '') + (await worldRulesBlock())
                 + (prev?.text ? '\n\n[CURRENT DIRECTIVE]\n' + prev.text : '')
                 + '\n\n[PLAYER\'S DIRECTION INSTRUCTION]\n' + instruction
                 + '\n\nWrite the revised director\'s note now. Output ONLY the note text.';
@@ -2995,7 +3057,7 @@
                 'Never resolve tension in the seed itself \u2014 seeds open doors, they do not close them.',
                 'Output ONLY the 3 seeds as numbered lines, nothing else.',
             ].join('\n');
-            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '')
+            const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '') + (await worldRulesBlock())
                 + (prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded; avoid repeating its pressure mix]\n' + prev.text : '')
                 + '\n\nPropose the 3 seeds now.';
             const sp = await callLLMSmart([
