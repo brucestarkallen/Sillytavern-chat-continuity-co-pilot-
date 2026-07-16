@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.50.0';
+    const VERSION = '2.51.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -2146,6 +2146,12 @@
     }
 
     async function applyEdits(list) {
+        // Applying is a multi-card run with awaits between cards. If the user
+        // switches chats mid-run, every later find/replace would search the NEW
+        // chat's text — and with fuzzy matching (0.78) plus the memory-wide
+        // fallback, a coincidental hit writes into the wrong story. Cards were
+        // reviewed against THIS chat; a switch voids the run.
+        const chatAt = chatRef();
         const chatApplied = [];
         const memPaths = [];
         const wiApplied = [];
@@ -2159,6 +2165,11 @@
         for (const edit of list) {
             const st = edit.kind === 'wi' ? edit.editStatus : edit.status;
             if (st !== 'pending') continue;
+            if (!sameChat(chatAt)) {
+                if (edit.kind === 'wi') edit.editStatus = 'chat changed mid-run \u2014 not applied';
+                else edit.status = 'chat changed mid-run \u2014 not applied';
+                continue;
+            }
             const sig = editSig(edit);
             if (appliedSigs.has(sig)) {
                 if (edit.kind === 'wi') edit.editStatus = 'applied earlier \u2014 duplicate card';
@@ -2246,6 +2257,11 @@
         const batch = undoStack.pop();
         if (!batch) { toast('Nothing to undo.', 'warning'); return; }
         const c = ctx();
+        // Captured once: restores must target the chat this batch belongs to even
+        // if the user switches mid-undo (the awaits below yield). metaRoot() called
+        // fresh after an await would hand back the NEW chat's ledger.
+        const chatAt = chatRef();
+        const rootAt = metaRoot();
         const changed = [];
         let memRestored = false;
         // Restore in REVERSE apply order: if one batch touched the same message twice
@@ -2272,13 +2288,20 @@
             msg.mes = item.before;
             if (typeof item.beforeSys === 'boolean') {
                 await setHiddenState(item.id, item.beforeSys);
-                const led = metaRoot().ccHidden;
+                const led = rootAt.ccHidden;
                 const pos = led.indexOf(item.id);
                 if (item.beforeSys && pos < 0) led.push(item.id);
                 if (!item.beforeSys && pos >= 0) led.splice(pos, 1);
             }
             refreshMessage(item.id);
             changed.push(item.id);
+        }
+        if (!sameChat(chatAt)) {
+            // In-memory restores above targeted the right chat via captured refs, but
+            // ST can only SAVE the currently open chat — and it reloads from disk on
+            // open. Say so instead of silently half-saving.
+            toast('Chat changed mid-undo \u2014 the restore may not have saved. Re-open that chat to verify.', 'warning');
+            return;
         }
         if (changed.length) await commitChanges(changed);
         if (memRestored) { saveMeta(); applyCritiqueInjection(); }
@@ -4398,12 +4421,24 @@
                     if (!msg.mes.includes('[EPISODE_END]')) return;
                     msg.mes = msg.mes.replace(/\s*\[EPISODE_END\]\s*$/, '').replace(/\[EPISODE_END\]/g, '').trim();
                     refreshMessage(Number(i));
+                    // ALL state writes happen synchronously with the event — before any
+                    // await — so they can only land in the chat that emitted it. The old
+                    // order read metaRoot() AFTER awaiting saveChat: switch chats during
+                    // that await and the NEW chat's director got marked concluded (and
+                    // maybeAutoDirector then auto-directed the wrong story).
+                    const chatAt = chatRef();
+                    const rootAt = metaRoot();
+                    const d = rootAt.director;
+                    let justConcluded = false;
+                    if (d && !d.concluded) {
+                        d.concluded = true;
+                        rootAt.cowriterNudged = 'E' + d.episode + '-done'; // conclusion note covers the seed prompt
+                        saveMeta();
+                        justConcluded = true;
+                    }
                     try { await ctx().saveChat?.(); } catch (e2) { /* ignore */ }
-                    const d = metaRoot().director;
-                    if (!d || d.concluded) return;
-                    d.concluded = true;
-                    metaRoot().cowriterNudged = 'E' + d.episode + '-done'; // conclusion note covers the seed prompt
-                    saveMeta();
+                    if (!justConcluded) return;   // a stale marker on an already-concluded episode stays silent, as before
+                    if (!sameChat(chatAt)) return;   // conclusion is saved; the announcement and auto-next belong to that chat's screen only
                     updateSub();
                     const note = '\uD83C\uDFAC Episode ' + d.episode + ' concluded'
                         + (settings.directorMode === 'auto' ? ' \u2014 auto-directing the next episode.'
