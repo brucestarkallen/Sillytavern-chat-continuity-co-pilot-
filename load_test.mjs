@@ -207,6 +207,63 @@ ok(SRC.includes("toast('Chat changed mid-undo"), 'undo: a mid-undo chat switch i
 const guardCount = (SRC.match(/if \(!sameChat\(chatAt\)\)/g) || []).length;
 ok(guardCount >= 12, 'sameChat guards present across LLM/apply/undo flows (found ' + guardCount + ', need >= 12)');
 
+console.log('== v2.52.0 invariants (craft doctrine + episode-end editor chain) ==');
+// The doctrine lines are load-bearing prompt content: if a refactor drops one,
+// the feature silently degrades to the pre-2.52 generic behavior.
+ok(SRC.includes('CRAFT \\u2014 the difference between competent and masterpiece'), 'director default carries the CRAFT doctrine (cause / value turns / irony / payoff debt / competent opposition / concrete scale)');
+ok(SRC.includes('STACK MEANING before the centerpiece'), 'seed mode expands premises showrunner-style (meaning stack / phases / population / reprice)');
+ok(SRC.includes('NORTH STAR:'), 'critique output contract opens with the single highest-leverage NORTH STAR lever');
+ok(SRC.includes('FRICTIONLESS SUCCESS'), 'critique holds the story to the masterpiece bar, not only the defect floor');
+ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V248, LEGACY_DIRECTOR_PROMPT_V251];'), 'stored 2.49-2.51 default prompt auto-upgrades to the CRAFT default');
+ok(SRC.includes('critiqueOnEpisode: true'), 'episode-end auto-critique defaults ON');
+const fnAt = SRC.indexOf('async function onEpisodeConcluded(chatAt)');
+ok(fnAt > -1, 'episode conclusion routes through onEpisodeConcluded');
+const critAt = SRC.indexOf("await generateCritique(true, 'episode');", fnAt);
+const dirAt = SRC.indexOf('maybeAutoDirector();', fnAt);
+ok(critAt > -1 && dirAt > -1 && critAt < dirAt, 'inside the chain, the editor pass is AWAITED before the next episode is directed (review -> plan order)');
+ok((SRC.match(/onEpisodeConcluded\(chatAt\);/g) || []).length === 2, 'both conclusion paths (episode marker + status check) run the chain');
+ok(SRC.includes('if (concluded) onEpisodeConcluded(chatAt);'), 'status-check path fires the chain AFTER its finally releases the running lock (fired inside it, both steps self-skip)');
+ok(!SRC.includes('maybeAutoDirector(); // auto mode: chain the next episode immediately'), 'no conclusion path bypasses the editor by auto-directing directly');
+// Live-settings proof: init actually installed the new default and flag.
+const CA = ctx.extensionSettings['continuityCopilot'] || {};
+ok(CA.critiqueOnEpisode === true, 'live settings after init: critiqueOnEpisode is true');
+ok(typeof CA.directorPrompt === 'string' && CA.directorPrompt.includes('CRAFT \u2014 the difference between competent and masterpiece'), 'live settings after init: director prompt is the CRAFT default');
+// The MESSAGE_RECEIVED handler (which hosts the conclusion chain) must survive a bare invoke.
+threw = '';
+try { for (const f of handlers.get('MESSAGE_RECEIVED') || []) await f(0); } catch (e) { threw = e && e.message; }
+ok(!threw, 'MESSAGE_RECEIVED handler runs against an empty chat' + (threw ? ' \u2014 threw: ' + threw : ''));
+
+console.log('== v2.52.0 behavior: conclusion runs review -> plan through the real code paths ==');
+// Arrange: live profile, auto director, an unconcluded episode, then a
+// storyteller reply carrying [EPISODE_END]. The mock transport records WHICH
+// prompt arrived WHEN — proving execution order, not just source order.
+const llmCalls = [];
+ctx.ConnectionManagerRequestService = {
+    sendRequest: async (pid, messages) => {
+        const sys = (messages && messages[0] && messages[0].content) || '';
+        if (sys.includes('NORTH STAR')) { llmCalls.push('critique'); return 'NORTH STAR: play the irony gap harder.\n1. Track every named character present until they visibly exit.'; }
+        if (sys.includes('expert story director')) { llmCalls.push('directive'); return 'Intensity: standard\n1. EPISODE PREMISE — the rematch everyone bet against.'; }
+        llmCalls.push('other'); return 'ONGOING \u2014 fine';
+    },
+};
+CA.profileId = 'gate-profile';
+CA.directorMode = 'auto';
+CA.streaming = false;
+CA.critiqueOnEpisode = true;
+CA.critiqueAuto = 0;
+ctx.chatMetadata['continuityCopilot'] = { director: { text: 'SECRET: episode one beats', episode: 1, concluded: false, ts: 1 }, directorEp: 1 };
+ctx.chat.push({ is_user: false, mes: 'The duel ends and the crowd goes silent. [EPISODE_END]' });
+console.log = logCap;
+try { for (const f of handlers.get('MESSAGE_RECEIVED') || []) await f(ctx.chat.length - 1); } catch (e) { errors.push('sim handler threw: ' + (e && e.message)); }
+await new Promise(r => setTimeout(r, 200)); // the chain is fire-and-forget from the handler; let it drain
+console.log = realLog;
+ok(!errors.some(x => x.includes('sim handler threw')), 'conclusion handler ran the sim without throwing');
+ok(llmCalls[0] === 'critique', 'the EDITOR pass fired first (got order: ' + llmCalls.join(', ') + ')');
+ok(llmCalls[1] === 'directive', 'the NEXT directive fired second — designed with the fresh notes already saved');
+ok(String(ctx.chatMetadata.cc_critique || '').startsWith('NORTH STAR:'), 'the review landed in cc_critique under the NORTH STAR contract');
+const dNow = (ctx.chatMetadata['continuityCopilot'] || {}).director || {};
+ok(dNow.episode === 2 && !dNow.concluded, 'auto mode chained to a live episode 2 after the review (got E' + dNow.episode + (dNow.concluded ? ' concluded' : '') + ')');
+
 console.log('');
 console.log('RESULT: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { console.log('MODULE INTEGRITY FAILED ✗'); process.exit(1); }

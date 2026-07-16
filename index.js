@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.51.0';
+    const VERSION = '2.52.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -213,6 +213,27 @@
         'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. An episode spans multiple scenes \u2014 never compress its whole arc into one scene, never pad past the landing. Under 340 words. Output ONLY the director\'s note text, no preamble.',
     ].join('\n');
 
+    // Verbatim 2.49\u20132.51 default \u2014 kept only so stored copies auto-upgrade.
+    const LEGACY_DIRECTOR_PROMPT_V251 = [
+        'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
+        'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
+        'The note must contain:',
+        '1. EPISODE PREMISE \u2014 one television-episode-quality premise rising naturally from existing threads. The premise is a DESTINATION the story travels to from wherever the player currently stands \u2014 never a state to cut to. "Opens in motion" means the first scene starts at a moment of activity bridged from the player\'s current position in one or two tight scenes; it never means skipping ahead.',
+        '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO or WHAT initiates and the pressure it puts on the player character. At least one beat must come from OUTSIDE the personal cast: the crowd/public, an institution or system, the environment, or chance. One mid-episode beat must be a TURN that changes the shape of the problem \u2014 a reveal, a reversal, an ally or enemy switching roles, or the obvious solution creating a worse problem \u2014 not merely louder pressure. The final beat must corner the player in a DILEMMA: design it so every option the player can SEE costs something they value (the secret, an ally, a principle, an advantage). But the design must be beatable in principle \u2014 if the player authors a path it did not foresee, honor it fully: a beaten trap is a triumph of the simulation, never retro-tax an earned victory to keep the cost alive. Weave ONE light B-beat between the pressure beats \u2014 humor, warmth, rivalry-banter, or a small personal stake among the cast \u2014 the breath that makes the pressure land harder. Anchor every beat to a MOTIVE \u2014 who wants what, and why NOW \u2014 rather than to an exact scripted event: motives survive the player\'s detours and the cast\'s own decisions; scripted events do not. Expect the simulation to bend your plan, and design beats that keep their function when bent.',
+        '3. NPC & WORLD INITIATIVE \u2014 antagonists, NPCs, and the world itself act first, true to their established methods; the setting should feel alive beyond the main cast.',
+        '4. LANDING \u2014 the natural end state of the episode and its consequence. The landing must permanently change at least one standing fact \u2014 a relationship, a reputation, a resource, a position, or a piece of knowledge \u2014 that future episodes inherit. Episodes that reset to the status quo are forbidden.',
+        HOOK_LINE + ' Plant the hook\'s seed visibly at least one beat before the landing, so the ending pays off something the player already glimpsed.',
+        '6. ARC \u2014 one sentence naming the season-level thread this episode advances (a gathering antagonist, a deepening mystery, a slow-burn bond, a rising institution) and how this episode moves it one visible step. Carry the previous directive\'s ARC forward and advance it \u2014 never restate it unchanged; if it resolved or went stale, promote the HOOK into the new ARC. Roughly every third episode, let the ARC itself take the A-plot.',
+        'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental) AND vary episode shape (investigation, trial or gauntlet, siege or defense, infiltration, social battlefield, hunt, revelation, calm-before-storm) \u2014 never repeat the previous episode\'s shape.',
+        'STAKES LAW \u2014 every stake must be one the world\'s standing rules actually produce. Check each beat against [WORLD RULES] and established canon: if the setting declares a thing legal, routine, or harmless, no institution or NPC may treat it as criminal, catastrophic, or lethal \u2014 and use the pressures the world DOES make real (rivalry, wounded pride, gossip, curiosity, politics answered in kind), scaled to the actual event. A dilemma built on a false stake is a broken episode, not a bold one. Drama is not bigger \u2014 it is TRUER.',
+        'Be bold within the world\'s logic: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
+        'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
+        'Honor any [editor notes] standing corrections present in the context \u2014 the episode you design must not repeat faults the editor has flagged.',
+        'FORECAST, NOT PROPHECY \u2014 this note is a plan made before the episode is played, and the LIVED story outranks it at every collision. Two forces may lawfully break any beat: the player\'s choices, and any NPC acting true to their own nature and current knowledge. Never force a character out of character, never bend probability, and never manufacture coincidence to rescue a beat \u2014 when a beat\'s moment no longer fits, translate its INTENT (the pressure or question it carried) into the current reality, or let it die. Choices must matter, or the simulation is a lie.',
+        'CONTINUITY LAW \u2014 you plan the episode; the STORYTELLER paces it. Write every beat as a situation that BEGINS on screen with the player present, never as one already underway. Events that involve the player \u2014 a challenge, a summons, an accusation, an arrival \u2014 must happen in scene where the player can react; they are never presumed already done. Only fully independent world movements may occur off screen, and the player discovers them, never inherits their consequences unexplained.',
+        'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. An episode spans multiple scenes \u2014 never compress its whole arc into one scene, never pad past the landing. Under 340 words. Output ONLY the director\'s note text, no preamble.',
+    ].join('\n');
+
     const DEFAULT_DIRECTOR_PROMPT = [
         'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
         'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
@@ -225,6 +246,7 @@
         '6. ARC \u2014 one sentence naming the season-level thread this episode advances (a gathering antagonist, a deepening mystery, a slow-burn bond, a rising institution) and how this episode moves it one visible step. Carry the previous directive\'s ARC forward and advance it \u2014 never restate it unchanged; if it resolved or went stale, promote the HOOK into the new ARC. Roughly every third episode, let the ARC itself take the A-plot.',
         'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental) AND vary episode shape (investigation, trial or gauntlet, siege or defense, infiltration, social battlefield, hunt, revelation, calm-before-storm) \u2014 never repeat the previous episode\'s shape.',
         'STAKES LAW \u2014 every stake must be one the world\'s standing rules actually produce. Check each beat against [WORLD RULES] and established canon: if the setting declares a thing legal, routine, or harmless, no institution or NPC may treat it as criminal, catastrophic, or lethal \u2014 and use the pressures the world DOES make real (rivalry, wounded pride, gossip, curiosity, politics answered in kind), scaled to the actual event. A dilemma built on a false stake is a broken episode, not a bold one. Drama is not bigger \u2014 it is TRUER.',
+        'CRAFT \u2014 the difference between competent and masterpiece: (1) CAUSE \u2014 chain beats with THEREFORE or BUT, never "and then": each beat exists because the previous one\'s outcome caused it or collided with it; a beat you could reorder without breaking the chain is filler. (2) TURN THE VALUE \u2014 every beat flips something for the player (safe\u2192exposed, ahead\u2192cornered, trusted\u2192doubted, hidden\u2192half-seen); a beat that ends where it began is dead \u2014 cut it or fuse it. (3) IRONY \u2014 build at least one beat on a knowledge gap the player can feel: an observer one clue from the truth, a question that lands with double meaning, a lie maintained in front of the one person who would recognize it. NPCs act only on what they could plausibly know \u2014 the gap is played, never leaked \u2014 and it closes only when someone on screen EARNS the discovery. (4) PAYOFF DEBT \u2014 cash in at least one detail planted earlier (a promise, prop, rumor, debt, or the previous HOOK) and plant one quiet detail this episode does not spend; the best turns feel inevitable in hindsight \u2014 seeded, not sprung. (5) COMPETENT OPPOSITION \u2014 antagonists make the strongest move available to THEM, not the move the plot needs; pressure comes from intelligence, never contrivance. (6) CONCRETE SCALE \u2014 grand is built from named specifics (who exactly watches, what exact thing changes hands, when exactly the clock runs out), never from adjectives.',
         'Be bold within the world\'s logic: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
         'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
         'Honor any [editor notes] standing corrections present in the context \u2014 the episode you design must not repeat faults the editor has flagged.',
@@ -256,6 +278,7 @@
         critiqueDepth: 8,
         autoRehide: true,
         critiqueAuto: 0,
+        critiqueOnEpisode: true,
         directorMode: 'off', // 'off' | 'auto' | 'cowriter'
         shortcuts: DEFAULT_SHORTCUTS,
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
@@ -320,7 +343,7 @@
         delete settings.directorAuto;
         // Migration: upgrade the stored director prompt if the user never customized it
         // (covers the pre-2.37.0 default and the 2.37.0 default with the old HOOK line)
-        const legacyPrompts = [LEGACY_DIRECTOR_PROMPT, LEGACY_DIRECTOR_PROMPT_V240.replace(HOOK_LINE, HOOK_LINE_2370), LEGACY_DIRECTOR_PROMPT_V240, LEGACY_DIRECTOR_PROMPT_V241, LEGACY_DIRECTOR_PROMPT_V246, LEGACY_DIRECTOR_PROMPT_V248];
+        const legacyPrompts = [LEGACY_DIRECTOR_PROMPT, LEGACY_DIRECTOR_PROMPT_V240.replace(HOOK_LINE, HOOK_LINE_2370), LEGACY_DIRECTOR_PROMPT_V240, LEGACY_DIRECTOR_PROMPT_V241, LEGACY_DIRECTOR_PROMPT_V246, LEGACY_DIRECTOR_PROMPT_V248, LEGACY_DIRECTOR_PROMPT_V251];
         if (typeof settings.directorPrompt === 'string' && legacyPrompts.some(p => settings.directorPrompt.trim() === p.trim())) {
             settings.directorPrompt = DEFAULT_DIRECTOR_PROMPT;
         }
@@ -2890,26 +2913,29 @@
         return out;
     }
 
-    async function generateCritique(isAuto) {
+    async function generateCritique(isAuto, reason) {
         if (running) return;
         running = true;
         setBusy(true);
-        const busyNote = addBubble('busy', isAuto ? 'auto-editor reviewing the story\u2026' : 'the editor is reviewing\u2026');
+        const busyNote = addBubble('busy', reason === 'episode' ? 'editor reviewing the concluded episode\u2026' : isAuto ? 'auto-editor reviewing the story\u2026' : 'the editor is reviewing\u2026');
         const chatAt = chatRef();
         try {
             const c = ctx();
             const md = c.chatMetadata || c.chat_metadata || {};
             const cur = typeof md.cc_critique === 'string' ? md.cc_critique : '';
             const sys = [
-                'You are a ruthless story editor reviewing a long-form roleplay. Produce STANDING NOTES for the storyteller AI: concrete, reusable craft corrections that fix systemic weaknesses.',
+                'You are the story\'s EDITOR and the standard is the writers\' room of a prestige drama or a top-of-its-year anime. Produce STANDING NOTES for the storyteller AI: concrete, reusable craft corrections that fix systemic weaknesses and pull the story toward that bar.',
                 'Analyze for: claustrophobia (everything orbiting the MC), dropped characters or props (people who vanish mid-scene), missing ambient world life (background events, crowds, random encounters, off-screen agendas), repeated mistakes, contradictions with the world\'s own rules, and stale pacing.',
                 'Also analyze the four worst immersion killers: (1) AGENCY THEFT \u2014 the storyteller narrating the player character\'s actions, dialogue, decisions, or inner feelings instead of leaving them to the player; (2) SAME-VOICE NPCS \u2014 characters whose dialogue is interchangeable, losing their established speech patterns, verbal tics, and registers; (3) RUSHED RESOLUTIONS \u2014 a conflict, fight, or dramatic confrontation raised and settled inside a single reply instead of played out across turns; (4) PHRASE TICS \u2014 stock phrases, repeated sentence shapes, or the same imagery recycled across replies.',
+                'Then hold the story to the masterpiece bar \u2014 flag: DEAD SCENES (scenes that end at the same value they began \u2014 no reversal, no new information, no shifted relationship); ON-THE-NOSE DIALOGUE (characters saying exactly what they mean and feel \u2014 the best dialogue is a move in a game: deflect, probe, bargain, dodge \u2014 with the true meaning underneath); WASTED IRONY (standing secrets, misreads, and hidden agendas the scenes fail to play against \u2014 no near-misses, no double meanings, no tension hiding in plain sight); UNPAID SETUPS and UNEARNED PAYOFFS (planted details left rotting; resolutions that arrive unseeded); LOUDNESS INFLATION (escalation by volume \u2014 bigger threats, more shouting \u2014 instead of by stakes and meaning); FRICTIONLESS SUCCESS (NPCs conceding too fast, obstacles folding on first push, victories that cost nothing).',
                 'Also mine any OOC/meta exchanges in the chat (corrections in (( )), [brackets], or marked OOC) for lessons the storyteller was already told.',
                 'Discipline: only add a correction you can tie to concrete evidence in the context. If the story has not meaningfully changed since [CURRENT NOTES], or no genuine new weakness exists, return the current notes unchanged apart from removing items the storyteller has demonstrably fixed. NEVER invent problems to fill space \u2014 an unchanged or shorter list is a good answer.',
                 'Standing notes are for SYSTEMIC patterns only; do not add a note for a one-off slip that a single chat edit could fix.',
-                'Write numbered standing corrections \u2014 as many as the story genuinely needs, no maximum. Each must be actionable and general enough to keep applying (e.g. "Track every named character present in a scene until they visibly exit"). Carry forward still-relevant items from [CURRENT NOTES] if provided. Optimize for perfection, immersion, engagement, and realism \u2014 while staying token-efficient: no padding, no repetition, no filler; every line must earn its place. Output ONLY the notes.',
+                'Open with EXACTLY one unnumbered line: "NORTH STAR: <the single highest-leverage change that would most raise this story right now>" \u2014 one lever, chosen ruthlessly, never a list. Then write numbered standing corrections \u2014 as many as the story genuinely needs, no maximum. Each must be actionable and general enough to keep applying (e.g. "Track every named character present in a scene until they visibly exit"). Carry forward still-relevant items from [CURRENT NOTES] if provided, including the previous NORTH STAR when it still holds. Optimize for perfection, immersion, engagement, and realism \u2014 while staying token-efficient: no padding, no repetition, no filler; every line must earn its place. Output ONLY the notes.',
             ].join('\n');
-            const user = buildContextBlock() + (await worldRulesBlock()) + (cur ? '\n\n[CURRENT NOTES]\n' + cur : '') + '\n\nWrite the standing notes now.';
+            const user = buildContextBlock() + (await worldRulesBlock()) + (cur ? '\n\n[CURRENT NOTES]\n' + cur : '')
+                + (reason === 'episode' ? '\n\n[EDITOR CONTEXT] An episode has just CONCLUDED. Weight the review toward it: did its turns actually turn, did the dilemma cost the player something real, did the landing change a standing fact \u2014 and fold any systemic lesson it exposes into the standing notes.' : '')
+                + '\n\nWrite the standing notes now.';
             const sp = await callLLMSmart([
                 { role: 'system', content: sys },
                 { role: 'user', content: user },
@@ -2964,7 +2990,7 @@
             extra.push('A previous episode directive is provided; treat it as concluded and write the NEXT episode, carrying its consequences forward. Advance its ARC one visible step (or promote its HOOK into a new ARC if the old one resolved or went stale). Vary the pressure mix AND choose a different episode shape than the previous one.');
         }
         if (mode === 'seed') {
-            extra.push('The player has provided an EPISODE SEED \u2014 their co-written premise for the next episode. The seed is MANDATORY: build the entire episode around it. Expand it into the full directive (premise, beats, initiative, landing) with your own inventive execution \u2014 the player wants to be surprised by HOW it unfolds, so add twists, complications, and specifics the seed does not spell out. If a previous episode directive is provided, treat it as concluded and carry its consequences into this one. If the seed conflicts with established canon in [STORY MEMORY], honor the intent of the seed while bending the execution to fit canon. Keep the player\'s stated intent as the A-plot \u2014 your inventions complicate HOW it unfolds, never replace WHAT it is. Still include the ARC line, advancing the previous ARC wherever the seed allows.');
+            extra.push('The player has provided an EPISODE SEED \u2014 their co-written premise for the next episode. The seed is MANDATORY: build the entire episode around it, and keep the player\'s stated intent as the A-plot \u2014 your inventions complicate HOW it unfolds, never replace WHAT it is. Expand it the way a great showrunner would, asking: what version of this premise would a viewer remember for years? Concretely: (a) STACK MEANING before the centerpiece \u2014 establish what it settles personally (between the people involved), socially (what every watcher will conclude), and materially (what changes hands with the outcome), so the event carries three kinds of weight at once; (b) give the centerpiece PHASES and a mid-turn \u2014 build-up or ritual, escalating stages, and one moment where its nature changes (a technique unveiled, a rule invoked, an interruption, a mask slipping); (c) POPULATE it \u2014 name who watches and what different watchers want from different outcomes; rivals, patrons, skeptics, and bettors are what make an event grand; (d) let the world REPRICE afterwards \u2014 the episode ends when specific people have visibly updated what they believe, want, or plan because of what happened, not when the event itself ends. The player wants to be surprised by HOW it unfolds \u2014 add twists, complications, and specifics the seed does not spell out, and honor the intensity the seed implies. If a previous episode directive is provided, treat it as concluded and carry its consequences into this one. If the seed conflicts with established canon in [STORY MEMORY], honor the intent of the seed while bending the execution to fit canon. Still include the ARC line, advancing the previous ARC wherever the seed allows.');
         }
         if (mode === 'edit') {
             extra.push('The CURRENT directive and the player\'s direction instruction are provided. Rewrite the directive to incorporate the player\'s direction while preserving whatever still works. Keep the same episode. If no current directive is provided, write a fresh one built around the player\'s direction.');
@@ -3101,6 +3127,7 @@
         setBusy(true);
         const busyNote = addBubble('busy', 'checking episode progress\u2026');
         const chatAt = chatRef();
+        let concluded = false;
         try {
             const sys = 'You are checking secret episode progress for a roleplay director. You receive the SECRET DIRECTIVE and the story context. Judge whether the episode\'s LANDING has been reached based only on actual narrated story events; ignore any literal [EPISODE_END] marker text. Reply with EXACTLY one line, spoiler-free, in one of these formats: "ONGOING \u2014 <short vague progress hint, no spoilers>" or "CONCLUDED \u2014 <short line>" or "DERAILED \u2014 <short line>". Never quote or reveal the directive contents.';
             const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '') + '\n\n[SECRET DIRECTIVE]\n' + d.text + '\n\nJudge the progress now.';
@@ -3120,7 +3147,7 @@
                 metaRoot().director.concluded = true;
                 saveMeta();
                 updateSub();
-                maybeAutoDirector(); // auto mode: chain the next episode immediately
+                concluded = true; // chain AFTER finally releases `running` \u2014 fired inside the lock, the editor pass and auto-next both self-skip (the old maybeAutoDirector call here silently did exactly that)
             }
         } catch (err) {
             addBubble('note', 'Director status error: ' + (err?.message || err));
@@ -3129,6 +3156,7 @@
             running = false;
             setBusy(false);
         }
+        if (concluded) onEpisodeConcluded(chatAt); // editor reviews the aired episode, then auto mode chains the next
     }
 
     async function suggestSeeds() {
@@ -3144,6 +3172,7 @@
                 'Each seed: ONE line, under 25 words, phrased as a hook (what erupts, arrives, or unravels) \u2014 not a full outline and no spoiler-level specifics; leave room for the director to surprise.',
                 'Ground every seed in [STORY MEMORY] and the current situation: unresolved threads, dangling consequences, promises, rivals, secrets at risk. Make the 3 seeds genuinely different in pressure source (personal / social or institutional / environmental or chance) AND in episode shape (trial, infiltration, siege, hunt, revelation, social battlefield\u2026).',
                 'Never resolve tension in the seed itself \u2014 seeds open doors, they do not close them.',
+                'Pitch each like the logline of an episode viewers would remember: name the concrete trigger and the specific thing it puts at risk. Prefer seeds that press on standing secrets, debts, rivalries, or knowledge gaps already alive in the story \u2014 the audience leans in hardest where someone on screen sits one step from a truth they must not reach.',
                 'Output ONLY the 3 seeds as numbered lines, nothing else.',
             ].join('\n');
             const user = buildContextBlock().replace(/\[EPISODE_END\]/g, '') + (await worldRulesBlock())
@@ -3408,7 +3437,7 @@
             '      <button class="cc_btn" id="cc_dirnext" title="Conclude this episode and direct the next">\uD83C\uDFAC Next</button>',
             '      <button class="cc_btn" id="cc_dirseed" title="Co-write: seed the next episode with your own premise">\uD83C\uDFAC Seed</button>',
             '      <button class="cc_btn" id="cc_dirstat" title="Spoiler-free episode progress check">\uD83C\uDFAC ?</button>',
-            '      <button class="cc_btn" id="cc_critique" title="Editor pass: update standing craft notes">\uD83D\uDCDD Critique</button>',
+            '      <button class="cc_btn" id="cc_critique" title="Editor pass: update standing craft notes (runs automatically at episode end when enabled)">\uD83D\uDCDD Critique</button>',
             '    </div>',
             '    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;align-items:center;">',
             '      <button class="cc_btn" id="cc_retry" title="Regenerate the last copilot reply">\u21BB Retry</button>',
@@ -3577,6 +3606,7 @@
             '<input type="text" id="cc_dir_anchors" placeholder="e.g. Classroom of the Elite, Kaguya-sama">',
             '<label>Auto-critique: run the editor every N storyteller replies (0 = off; needs a Connection Profile)</label>',
             '<input type="number" id="cc_crit_auto" min="0" max="100">',
+            '<div class="cc_check"><input type="checkbox" id="cc_crit_ep"><span>Auto-critique when an episode concludes \u2014 the editor reviews each aired episode; in Auto director mode the next episode is then designed with the fresh notes (needs a Connection Profile)</span></div>',
             '<label>Director mode</label>',
             '<select id="cc_dir_mode">',
             '  <option value="off">Off \u2014 manual only (\uD83C\uDFAC New / Next / Seed buttons)</option>',
@@ -3622,6 +3652,7 @@
         el('cc_crit_depth').value = settings.critiqueDepth;
         el('cc_dir_anchors').value = settings.directorAnchors || '';
         el('cc_crit_auto').value = settings.critiqueAuto;
+        el('cc_crit_ep').checked = settings.critiqueOnEpisode !== false;
         el('cc_dir_mode').value = ['off', 'auto', 'cowriter'].includes(settings.directorMode) ? settings.directorMode : 'off';
         el('cc_wi_enable').checked = !!settings.wiEnable;
         el('cc_wi_books').value = settings.wiBooks || '';
@@ -3650,6 +3681,7 @@
             settings.critiqueDepth = Number(el('cc_crit_depth').value) || 8;
             settings.directorAnchors = el('cc_dir_anchors').value;
             settings.critiqueAuto = Math.max(0, Number(el('cc_crit_auto').value) || 0);
+            settings.critiqueOnEpisode = el('cc_crit_ep').checked;
             settings.directorMode = el('cc_dir_mode').value || 'off';
             settings.wiEnable = el('cc_wi_enable').checked;
             settings.wiBooks = el('cc_wi_books').value;
@@ -4257,6 +4289,22 @@
         } catch (e) { /* ignore */ }
     }
 
+    // Episode conclusion chain: the editor reviews the aired episode FIRST, so
+    // the next directive (auto mode) is designed with the fresh standing notes
+    // in hand \u2014 the review\u2192plan loop of a writers' room. Both call sites run
+    // inside a sameChat guard already; the entry guard is belt for the async gap.
+    async function onEpisodeConcluded(chatAt) {
+        if (!sameChat(chatAt)) return;
+        if (settings.critiqueOnEpisode && settings.profileId && !running) {
+            const m = metaRoot();
+            m.critAutoCount = 0; // the episode review covers the counter's pending pass
+            saveMeta();
+            await generateCritique(true, 'episode');
+            if (!sameChat(chatAt)) return; // review saved to its chat; the next episode belongs to that chat's own screen
+        }
+        maybeAutoDirector();
+    }
+
     function maybeAutoCritique() {
         try {
             const n = Number(settings.critiqueAuto) || 0;
@@ -4447,7 +4495,7 @@
                     toast(note, 'success');
                     addBubble('note', note);
                     pushHistory('note', note);
-                    maybeAutoDirector();
+                    onEpisodeConcluded(chatAt);
                 } catch (e2) { /* ignore */ }
             });
             if (c.event_types?.GENERATION_STARTED) {
