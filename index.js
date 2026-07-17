@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.55.0';
+    const VERSION = '2.56.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -299,6 +299,7 @@
         recentFull: 8,
         fetchRounds: 3,
         maxTokens: 8192,
+        llmTimeoutSec: 300,
         thinkRetries: 2,
         wiEnable: false,
         wiBooks: '',
@@ -1342,6 +1343,40 @@
         return chunk.startsWith(acc) ? chunk : acc + chunk;
     }
 
+    // A transport await must never be able to wedge the extension. If the
+    // provider's promise dangles, `running` is held forever, and every later
+    // click on every button — on every model — dies silently at `if (running)`.
+    // Two independent releases: a stall deadline (provider hung: abort + loud
+    // error) and the abort signal itself (so ⏹ Stop unblocks the await even
+    // against backends that ignore AbortSignal and never settle).
+    function raceTransport(p, label) {
+        const secs = Math.max(0, Number(settings.llmTimeoutSec ?? 300));
+        const ac = abortCtl;
+        return new Promise((resolve, reject) => {
+            let done = false;
+            let tm = null;
+            const finish = (fn, v) => {
+                if (done) return;
+                done = true;
+                if (tm) clearTimeout(tm);
+                try { ac?.signal?.removeEventListener?.('abort', onAbort); } catch (e) { /* ignore */ }
+                fn(v);
+            };
+            const onAbort = () => finish(reject, new Error('stopped'));
+            if (secs) {
+                tm = setTimeout(() => {
+                    try { ac?.abort(); } catch (e) { /* ignore */ }
+                    finish(reject, new Error(label + ' \u2014 no response after ' + secs + 's; the request was aborted so the extension is not wedged. Raise "LLM stall timeout" in settings for very slow models, or 0 to disable.'));
+                }, secs * 1000);
+            }
+            if (ac?.signal) {
+                if (ac.signal.aborted) { onAbort(); return; }
+                try { ac.signal.addEventListener?.('abort', onAbort); } catch (e) { /* ignore */ }
+            }
+            Promise.resolve(p).then(v => finish(resolve, v), e => finish(reject, e));
+        });
+    }
+
     async function callLLM(messages, onPartial) {
         const c = ctx();
         const pid = settings.profileId;
@@ -1352,22 +1387,29 @@
         if (pid && c.ConnectionManagerRequestService?.sendRequest) {
             if (settings.streaming) {
                 try {
-                    const res = await c.ConnectionManagerRequestService.sendRequest(pid, messages, maxTok, { stream: true, signal: abortCtl?.signal });
+                    const res = await raceTransport(c.ConnectionManagerRequestService.sendRequest(pid, messages, maxTok, { stream: true, signal: abortCtl?.signal }), 'stream start');
                     if (typeof res === 'function') {
                         let acc = '';
                         let reasoning = '';
                         try {
-                        for await (const chunk of res()) {
-                            if (stopRequested) break;
-                            if (typeof chunk === 'string') {
-                                acc = grow(acc, chunk);
-                            } else {
-                                acc = grow(acc, String(chunk?.text ?? ''));
-                                const r = chunk?.state?.reasoning ?? chunk?.reasoning;
-                                if (typeof r === 'string') reasoning = grow(reasoning, r);
+                            // Manual iteration so every inter-chunk gap sits under the
+                            // stall deadline — a stream that opens and then goes quiet
+                            // forever is the same wedge as a promise that never settles.
+                            const it = res()[Symbol.asyncIterator]();
+                            while (true) {
+                                const step = await raceTransport(it.next(), 'stream stalled mid-response');
+                                if (step.done) break;
+                                const chunk = step.value;
+                                if (stopRequested) break;
+                                if (typeof chunk === 'string') {
+                                    acc = grow(acc, chunk);
+                                } else {
+                                    acc = grow(acc, String(chunk?.text ?? ''));
+                                    const r = chunk?.state?.reasoning ?? chunk?.reasoning;
+                                    if (typeof r === 'string') reasoning = grow(reasoning, r);
+                                }
+                                if (onPartial) onPartial(acc, reasoning);
                             }
-                            if (onPartial) onPartial(acc, reasoning);
-                        }
                         } catch (se) { if (!stopRequested) throw se; }
                         if (reasoning && !/<think|<reasoning/i.test(acc)) {
                             return '<think>' + reasoning + '</think>\n' + acc;
@@ -1380,7 +1422,7 @@
                 }
             }
             try {
-                const res = await c.ConnectionManagerRequestService.sendRequest(pid, messages, maxTok, { signal: abortCtl?.signal });
+                const res = await raceTransport(c.ConnectionManagerRequestService.sendRequest(pid, messages, maxTok, { signal: abortCtl?.signal }), 'request');
                 return extractText(res);
             } catch (se) {
                 if (stopRequested) return '';
@@ -1397,7 +1439,7 @@
         if (typeof c.generateRaw === 'function') {
             usingFallbackGen = true;
             try {
-                const res = await c.generateRaw({ prompt: convo, systemPrompt: sys });
+                const res = await raceTransport(c.generateRaw({ prompt: convo, systemPrompt: sys }), 'request (fallback backend)');
                 return extractText(res);
             } catch (se) {
                 if (stopRequested) return '';
@@ -2546,7 +2588,7 @@
     }
 
     async function runGeneration(opts = {}) {
-        if (running) return;
+        if (running) { toast('Another operation is still running \u2014 press \u23F9 Stop first, or wait for it to finish.', 'warning'); return; }
         running = true;
         setBusy(true);
         const chatAt = chatRef();               // which chat asked
@@ -2954,7 +2996,7 @@
     }
 
     async function generateCritique(isAuto, reason) {
-        if (running) return;
+        if (running) { if (!isAuto) toast('Another operation is still running \u2014 press \u23F9 Stop first, or wait for it to finish.', 'warning'); return; }
         running = true;
         setBusy(true);
         const busyNote = addBubble('busy', reason === 'episode' ? 'editor reviewing the concluded episode\u2026' : isAuto ? 'auto-editor reviewing the story\u2026' : 'the editor is reviewing\u2026');
@@ -3042,7 +3084,7 @@
     }
 
     async function generateDirective(mode, isAuto, seedText) {
-        if (running) return;
+        if (running) { if (!isAuto) toast('Another operation is still running \u2014 press \u23F9 Stop first, or wait for it to finish.', 'warning'); return; }
         running = true;
         setBusy(true);
         const busyNote = addBubble('busy', mode === 'seed' ? 'directing your episode\u2026' : mode === 'next' ? 'directing the next episode\u2026' : 'directing\u2026');
@@ -3140,7 +3182,7 @@
     }
 
     async function directorEdit(instruction) {
-        if (running) return;
+        if (running) { toast('Another operation is still running \u2014 press \u23F9 Stop first, or wait for it to finish.', 'warning'); return; }
         running = true;
         setBusy(true);
         const busyNote = addBubble('busy', 'revising the directive\u2026');
@@ -3184,7 +3226,7 @@
             addBubble('note', '\uD83C\uDFAC Episode ' + d.episode + ' already concluded \u2014 ' + (settings.directorMode === 'cowriter' ? 'seed the next one with "#e \u2026" or \uD83C\uDFAC Seed.' : 'press \uD83C\uDFAC Next when ready.'));
             return;
         }
-        if (running) return;
+        if (running) { toast('Another operation is still running \u2014 press \u23F9 Stop first, or wait for it to finish.', 'warning'); return; }
         running = true;
         setBusy(true);
         const busyNote = addBubble('busy', 'checking episode progress\u2026');
@@ -3222,7 +3264,7 @@
     }
 
     async function suggestSeeds() {
-        if (running) return;
+        if (running) { toast('Another operation is still running \u2014 press \u23F9 Stop first, or wait for it to finish.', 'warning'); return; }
         running = true;
         setBusy(true);
         const busyNote = addBubble('busy', 'sketching episode seeds\u2026');
@@ -3646,6 +3688,7 @@
             '  <div><label>Recent msgs sent in full</label><input type="number" id="cc_recent" min="0" max="100"></div>',
             '  <div><label>Fetch rounds</label><input type="number" id="cc_rounds" min="0" max="6"></div>',
             '  <div><label>Max output tokens</label><input type="number" id="cc_maxtok" min="256" max="32768" step="256"></div>',
+            '  <div><label>LLM stall timeout (s, 0 = off)</label><input type="number" id="cc_llm_timeout" min="0" max="3600" step="30"></div>',
             '</div>',
             '<div style="font-size:0.78em;opacity:0.65;margin-top:2px;">Max output = your provider\'s response limit (GLM providers: usually 8k\u201316k). Asking for more than the provider allows rejects the whole request \u2014 bigger is not better.</div>',
             '<label>Auto-recovery retries (answer eaten by thinking / cut mid-block; 0 = off; stops on its own when a round adds nothing; Stop button always works)</label>',
@@ -3702,6 +3745,7 @@
         el('cc_recent').value = settings.recentFull;
         el('cc_rounds').value = settings.fetchRounds;
         el('cc_maxtok').value = settings.maxTokens;
+        el('cc_llm_timeout').value = Number.isFinite(Number(settings.llmTimeoutSec)) ? settings.llmTimeoutSec : 300;
         el('cc_think_retries').value = Number.isFinite(Number(settings.thinkRetries)) ? settings.thinkRetries : 2;
         el('cc_pattern').value = settings.memoryKeyPattern;
         el('cc_userok').checked = !!settings.allowUserEdits;
@@ -3731,6 +3775,7 @@
             settings.recentFull = Number(el('cc_recent').value) || 0;
             settings.fetchRounds = Number(el('cc_rounds').value) || 0;
             settings.maxTokens = Math.min(32768, Math.max(256, Number(el('cc_maxtok').value) || 4096));
+            settings.llmTimeoutSec = Math.max(0, Math.min(3600, Number(el('cc_llm_timeout').value ?? 300)));
             const trv = Number(el('cc_think_retries').value);
             settings.thinkRetries = Number.isFinite(trv) ? Math.max(0, Math.min(99, trv)) : 2;
             settings.memoryKeyPattern = el('cc_pattern').value || defaults.memoryKeyPattern;
@@ -4479,7 +4524,7 @@
     }
 
     async function nameChatAuto() {
-        if (running) return;
+        if (running) return; // background task: silent skip is by design, it retries later
         const c = ctx();
         if (!Array.isArray(c.chat)) { toast('No chat loaded.', 'error'); return; }
         if (!settings.profileId) { toast('Set a Connection Profile first (gear settings) to auto-name.', 'error'); return; }

@@ -102,7 +102,11 @@ const documentMock = {
 globalThis.document = documentMock;
 globalThis.window = globalThis;
 try { globalThis.navigator = { userAgent: 'gate' }; } catch (e) { /* node >= 21 exposes a read-only navigator — good enough */ }
-globalThis.toastr = { info: () => {}, success: () => {}, warning: () => {}, error: () => {}, clear: () => {} };
+// Toasts are user-visible feedback; capture them so 'loud, never silent'
+// behavior is provable instead of vanishing into a no-op.
+const toasts = [];
+const _t = (m) => { toasts.push(String(m)); };
+globalThis.toastr = { info: _t, success: _t, warning: _t, error: _t, clear: () => {} };
 globalThis.localStorage = {
     _d: new Map(),
     get length() { return this._d.size; },
@@ -225,6 +229,10 @@ ok(SRC.includes('SHOWRUNNER running the second-draft pass'), 'directives get a s
 ok(SRC.includes('directorTwoPass: true'), 'the second-draft pass defaults ON');
 ok(SRC.includes("const isRestart = mode === 'new' && !!String(prev?.text || '').trim();"), 'New over a live directive is treated as a restart');
 ok(SRC.includes('The player RESTARTED this episode'), 'restart carries its own prompt contract (never aired / genuinely different)');
+ok(SRC.includes('function raceTransport('), 'every transport await runs under the stall watchdog');
+ok((SRC.match(/raceTransport\(/g) || []).length >= 5, 'watchdog covers stream start, stream chunks, plain request, and the fallback backend (found ' + (SRC.match(/raceTransport\(/g) || []).length + ' uses, need >= 5)');
+ok(SRC.includes('llmTimeoutSec: 300'), 'stall timeout defaults to 300s and is configurable (0 = off)');
+ok(!/if \(running\) return;\s*\n\s*running = true/.test(SRC), 'no user-initiated entry can die silently at the running flag any more');
 ok(SRC.includes('critiqueOnEpisode: true'), 'episode-end auto-critique defaults ON');
 const fnAt = SRC.indexOf('async function onEpisodeConcluded(chatAt)');
 ok(fnAt > -1, 'episode conclusion routes through onEpisodeConcluded');
@@ -316,6 +324,45 @@ ok(String(dR.text || '').includes('RESTARTED CUT'), 'the restarted directive rep
 ctx.chatMetadata['continuityCopilot'] = {};
 for (const f of handlers.get('CHAT_CHANGED') || []) await f(); // the real refresh path
 ok(document.getElementById('cc_dirnew').textContent.includes('New'), 'with no directive the same button reads New');
+
+console.log('== v2.56.0 behavior: a hung provider cannot wedge the extension ==');
+// The reported symptom: one request never settles -> `running` held forever ->
+// every later click on every model dies silently. Prove the watchdog releases
+// it AND that the very next click works.
+llmCalls.length = 0;
+CA.llmTimeoutSec = 1;           // 1s deadline for the test
+CA.streaming = false;
+let hangs = 0;
+ctx.ConnectionManagerRequestService = {
+    sendRequest: (pid, messages) => { hangs++; return new Promise(() => {}); },   // never settles
+};
+ctx.chatMetadata['continuityCopilot'] = { director: { text: 'E2 live directive.', episode: 2, concluded: false, ts: 9 }, directorEp: 2 };
+for (const f of handlers.get('CHAT_CHANGED') || []) await f();
+console.log = logCap;
+document.getElementById('cc_dirnew').click();               // restart against the hung provider
+await new Promise(r => setTimeout(r, 300));
+const busyDuringHang = true;                                 // op in flight; second click must be LOUD, not silent
+const toastsBefore = toasts.length;
+document.getElementById('cc_dirnew').click();
+const gotBusyToast = toasts.length > toastsBefore && /Another operation is still running/.test(String(toasts[toasts.length - 1]));
+await new Promise(r => setTimeout(r, 1400));                 // let the 1s watchdog fire
+console.log = realLog;
+ok(gotBusyToast, 'clicking during an in-flight operation is LOUD (busy toast), never a silent return');
+ok(hangs === 1, 'the hung request was made exactly once (got ' + hangs + ')');
+ok((ctx.chatMetadata['continuityCopilot'].director || {}).text === 'E2 live directive.', 'the directive was left unchanged by the timed-out attempt');
+// Self-heal: the very next click, now against a working transport, must succeed.
+ctx.ConnectionManagerRequestService = {
+    sendRequest: async (pid, messages) => {
+        const sys = (messages && messages[0] && messages[0].content) || '';
+        if (sys.includes('SHOWRUNNER running the second-draft pass')) return 'Intensity: standard\nHEALED CUT: the extension recovered.';
+        return 'Intensity: standard\n1. EPISODE PREMISE — recovery.';
+    },
+};
+console.log = logCap;
+document.getElementById('cc_dirnew').click();
+await new Promise(r => setTimeout(r, 300));
+console.log = realLog;
+ok(String((ctx.chatMetadata['continuityCopilot'].director || {}).text || '').includes('HEALED CUT'), 'after the watchdog fired, the NEXT click succeeded — running was released, no reload needed');
 
 console.log('');
 console.log('RESULT: ' + pass + ' passed, ' + fail + ' failed');
