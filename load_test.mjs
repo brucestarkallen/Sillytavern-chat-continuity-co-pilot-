@@ -232,6 +232,7 @@ ok(SRC.includes('DELIBERATION \\u2014 if you reason privately'), 'director defau
 ok((SRC.match(/Deliberate efficiently \\u2014 the token budget is shared/g) || []).length === 2, 'showrunner and critique prompts carry deliberation discipline');
 ok(SRC.includes('raw = await callLLM(msgs2, onPartial, bigPot);'), 'think-consumed recovery runs in an ENLARGED pot — same-size recovery over longer input is mathematically doomed');
 ok(SRC.includes('keep it to a single sentence'), 'recovery gives forced reasoning phases an explicit escape hatch');
+ok(SRC.includes('FIRST-DRAFT MODE \\u2014 a showrunner second-draft pass will interrogate'), 'with two-pass on, the draft declares fast-draft mode — deep thought moves to the review');
 ok(SRC.includes('CAST \\u2014 before writing beats, sweep the established cast'), 'director default carries the CAST law (stake sweep, jurisdiction-by-definition, no furniture placement)');
 ok(SRC.includes('FURNITURE CHARACTERS'), 'critique bar catches furniture characters and absent stakeholders');
 ok(SRC.includes('SHOWRUNNER running the second-draft pass'), 'directives get a showrunner second-draft pass (premise ambition, the memorable moment, wasted cast, safety, logic)');
@@ -392,6 +393,7 @@ ctx.ConnectionManagerRequestService = {
     sendRequest: async (pid, messages, maxTok, opts) => {
         const sys = (messages && messages[0] && messages[0].content) || '';
         const isReview = sys.includes('SHOWRUNNER running the second-draft pass');
+        if (!isReview) globalThis.__draftSys = sys;
         return function stream() {
             return (async function* () {
                 const words = isReview ? ['Intensity: standard\n', 'TICKED CUT: ', 'alive and streaming.'] : ['Intensity: standard\n', '1. EPISODE ', 'PREMISE — liveness.'];
@@ -425,6 +427,7 @@ ok(sawPhase2, 'the phase label flipped to the showrunner second draft mid-flow')
 ok(sawCountdown, 'the watchdog countdown is visible, so a silent provider has a visible fuse');
 ok(!leakedContent, 'secrecy held: the readout showed counts, never directive content');
 ok(String((ctx.chatMetadata['continuityCopilot'].director || {}).text || '').includes('TICKED CUT'), 'the streamed restart completed and stored the showrunner cut');
+ok(/FIRST-DRAFT MODE/.test(String(globalThis.__draftSys || '')), 'two-pass draft ran in declared fast-draft mode');
 
 console.log('== v2.58.0 behavior: end-season audit knows how much actually aired ==');
 // Case 1: the directive stored by the previous sim was never played (no
@@ -474,7 +477,7 @@ const potCalls = [];
 ctx.ConnectionManagerRequestService = {
     sendRequest: async (pid, messages, maxTok) => {
         const last = (messages[messages.length - 1] && messages[messages.length - 1].content) || '';
-        potCalls.push({ maxTok, recovery: /Transcribe the decisions above/.test(last) });
+        potCalls.push({ maxTok, recovery: /Transcribe the decisions above/.test(last), fastDraft: /FIRST-DRAFT MODE/.test((messages[0] && messages[0].content) || '') });
         if (potCalls.length === 1) return '<think>endless deliberation about the perfect premise, forty thousand tokens of it</think>';
         return 'Intensity: standard\n1. EPISODE PREMISE — transcribed from the finished reasoning.';
     },
@@ -485,6 +488,7 @@ await sleep(400);
 console.log = realLog;
 ok(potCalls.length === 2, 'exactly one recovery round was needed (got ' + potCalls.length + ' calls)');
 ok(potCalls[0] && potCalls[0].maxTok === 4096 && !potCalls[0].recovery, 'first attempt ran at the configured budget');
+ok(potCalls[0] && !potCalls[0].fastDraft, 'single-pass mode keeps full deliberation — fast-draft only when a review will follow');
 ok(potCalls[1] && potCalls[1].maxTok === 8192, 'the recovery ran in the enlarged pot (got ' + (potCalls[1] && potCalls[1].maxTok) + ', want 8192)');
 ok(potCalls[1] && potCalls[1].recovery, 'the recovery demanded transcription of the finished reasoning');
 ok(String((ctx.chatMetadata['continuityCopilot'].director || {}).text || '').includes('transcribed from the finished reasoning'), 'the directive was recovered and stored — the thinking was not wasted');

@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.59.0';
+    const VERSION = '2.60.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -3133,20 +3133,27 @@
             // model must SEE what it is replacing or it can hand back the same episode.
             // The discarded text is passed as never-aired \u2014 never as concluded history.
             const isRestart = mode === 'new' && !!String(prev?.text || '').trim();
+            // Writers'-room latency shape for reasoning models: two sequential
+            // full deliberations (draft ~5min + review ~5min) is where 600s
+            // episodes come from. Real rooms write the first draft FAST and put
+            // the deep thought into revision — so when the showrunner pass will
+            // run, the draft is told to be exactly that. Single-pass mode keeps
+            // full deliberation on its only pass.
+            const willReview = settings.directorTwoPass !== false && mode !== 'edit';
             const baseUser = buildContextBlock().replace(/\[EPISODE_END\]/g, '') + (await worldRulesBlock())
                 + ((mode === 'next' || mode === 'seed') && prev?.text ? '\n\n[PREVIOUS EPISODE DIRECTIVE \u2014 concluded]\n' + prev.text : '')
                 + (isRestart ? '\n\n[DISCARDED DIRECTIVE \u2014 rejected by the player, never aired, not canon]\n' + prev.text : '')
                 + (mode === 'seed' ? '\n\n[PLAYER\'S EPISODE SEED]\n' + String(seedText || '').trim() : '');
             tick = busyTicker(busyNote, (isRestart ? 'restarting episode \u2014 fresh draft' : mode === 'seed' ? 'directing your episode \u2014 draft' : mode === 'next' ? 'directing the next episode \u2014 draft' : 'directing \u2014 draft'));
             const sp = await callLLMSmart([
-                { role: 'system', content: directorAuthorPrompt(isRestart ? 'restart' : mode) },
+                { role: 'system', content: directorAuthorPrompt(isRestart ? 'restart' : mode) + (willReview ? '\nFIRST-DRAFT MODE \u2014 a showrunner second-draft pass will interrogate and rewrite this directive next. Draft fast and decisively: full format, every law honored, but no polishing and no extended private deliberation \u2014 commit to the strongest version you can reach quickly and let the review sharpen it. Speed here is not lower quality; the deep pass is coming.' : '') },
                 { role: 'user', content: baseUser + '\n\nWrite the director\'s note now.' },
             ], tick.onPartial);
             if (stopRequested) { addBubble('note', 'Stopped \u2014 directive unchanged.'); return; }
             if (!sameChat(chatAt)) { addBubble('note', 'Chat changed mid-generation \u2014 the directive belonged to the previous chat and was discarded.'); return; }
             let text = sp.rest.trim();
             if (!text) throw new Error(sp.think ? 'answer consumed by thinking \u2014 raise Max output tokens or lower reasoning effort' : 'empty directive');
-            if (settings.directorTwoPass !== false && mode !== 'edit') {
+            if (willReview) {
                 // Second draft: the showrunner pass. The draft goes back in with the
                 // same context; the reviewer's cut is what ships.
                 tick.phase('showrunner second draft');
