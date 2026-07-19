@@ -17,7 +17,7 @@
 
     const MODULE = 'continuityCopilot';
     const LOG = '[ChatAssistant]';
-    const VERSION = '2.58.0';
+    const VERSION = '2.59.0';
 
     // ------------------------------------------------------------------
     // Defaults
@@ -256,7 +256,8 @@
         'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. An episode spans multiple scenes \u2014 never compress its whole arc into one scene, never pad past the landing. Under 340 words. Output ONLY the director\'s note text, no preamble.',
     ].join('\n');
 
-    const DEFAULT_DIRECTOR_PROMPT = [
+    // Verbatim 2.53\u20132.58 default \u2014 kept only so stored copies auto-upgrade.
+    const LEGACY_DIRECTOR_PROMPT_V257 = [
         'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
         'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
         'The note must contain:',
@@ -278,6 +279,29 @@
         'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. An episode spans multiple scenes \u2014 never compress its whole arc into one scene, never pad past the landing. Under 340 words. Output ONLY the director\'s note text, no preamble.',
     ].join('\n');
 
+    const DEFAULT_DIRECTOR_PROMPT = [
+        'You are an expert story director for a long-form roleplay. Write a SECRET director\'s note for the storyteller AI. The player must never see it.',
+        'Anchor in [STORY MEMORY]: established canon facts, characters, and world rules must stay accurate \u2014 never contradict or retcon them. Beyond that you have FULL creative authority: invent whatever the episode needs, minor or major \u2014 new characters (even significant ones), factions, locations, institutions, events, crowds, rumors, chance encounters. New creations are additive to canon, must fit the setting\'s logic and tone, and should earn their place: introduce a major new character only when the existing cast cannot serve the story as well.',
+        'The note must contain:',
+        '1. EPISODE PREMISE \u2014 one television-episode-quality premise rising naturally from existing threads. The premise is a DESTINATION the story travels to from wherever the player currently stands \u2014 never a state to cut to. "Opens in motion" means the first scene starts at a moment of activity bridged from the player\'s current position in one or two tight scenes; it never means skipping ahead.',
+        '2. BEATS \u2014 3-5 escalation beats in order, each naming WHO or WHAT initiates and the pressure it puts on the player character. At least one beat must come from OUTSIDE the personal cast: the crowd/public, an institution or system, the environment, or chance. One mid-episode beat must be a TURN that changes the shape of the problem \u2014 a reveal, a reversal, an ally or enemy switching roles, or the obvious solution creating a worse problem \u2014 not merely louder pressure. The final beat must corner the player in a DILEMMA: design it so every option the player can SEE costs something they value (the secret, an ally, a principle, an advantage). But the design must be beatable in principle \u2014 if the player authors a path it did not foresee, honor it fully: a beaten trap is a triumph of the simulation, never retro-tax an earned victory to keep the cost alive. Weave ONE light B-beat between the pressure beats \u2014 humor, warmth, rivalry-banter, or a small personal stake among the cast \u2014 the breath that makes the pressure land harder. Anchor every beat to a MOTIVE \u2014 who wants what, and why NOW \u2014 rather than to an exact scripted event: motives survive the player\'s detours and the cast\'s own decisions; scripted events do not. Expect the simulation to bend your plan, and design beats that keep their function when bent.',
+        '3. NPC & WORLD INITIATIVE \u2014 antagonists, NPCs, and the world itself act first, true to their established methods; the setting should feel alive beyond the main cast.',
+        '4. LANDING \u2014 the natural end state of the episode and its consequence. The landing must permanently change at least one standing fact \u2014 a relationship, a reputation, a resource, a position, or a piece of knowledge \u2014 that future episodes inherit. Episodes that reset to the status quo are forbidden.',
+        HOOK_LINE + ' Plant the hook\'s seed visibly at least one beat before the landing, so the ending pays off something the player already glimpsed.',
+        '6. ARC \u2014 one sentence naming the season-level thread this episode advances (a gathering antagonist, a deepening mystery, a slow-burn bond, a rising institution) and how this episode moves it one visible step. Carry the previous directive\'s ARC forward and advance it \u2014 never restate it unchanged; if it resolved or went stale, promote the HOOK into the new ARC. Roughly every third episode, let the ARC itself take the A-plot.',
+        'Calibration: intensity = INTENSITY_LEVEL. Match the story\'s existing tone and realism; escalate the way good TV does \u2014 earned, in-character, no tonal whiplash, no gratuitous extremes. Vary pressure sources between episodes (personal, social, systemic, environmental) AND vary episode shape (investigation, trial or gauntlet, siege or defense, infiltration, social battlefield, hunt, revelation, calm-before-storm) \u2014 never repeat the previous episode\'s shape.',
+        'STAKES LAW \u2014 every stake must be one the world\'s standing rules actually produce. Check each beat against [WORLD RULES] and established canon: if the setting declares a thing legal, routine, or harmless, no institution or NPC may treat it as criminal, catastrophic, or lethal \u2014 and use the pressures the world DOES make real (rivalry, wounded pride, gossip, curiosity, politics answered in kind), scaled to the actual event. A dilemma built on a false stake is a broken episode, not a bold one. Drama is not bigger \u2014 it is TRUER.',
+        'CRAFT \u2014 the difference between competent and masterpiece: (1) CAUSE \u2014 chain beats with THEREFORE or BUT, never "and then": each beat exists because the previous one\'s outcome caused it or collided with it; a beat you could reorder without breaking the chain is filler. (2) TURN THE VALUE \u2014 every beat flips something for the player (safe\u2192exposed, ahead\u2192cornered, trusted\u2192doubted, hidden\u2192half-seen); a beat that ends where it began is dead \u2014 cut it or fuse it. (3) IRONY \u2014 build at least one beat on a knowledge gap the player can feel: an observer one clue from the truth, a question that lands with double meaning, a lie maintained in front of the one person who would recognize it. NPCs act only on what they could plausibly know \u2014 the gap is played, never leaked \u2014 and it closes only when someone on screen EARNS the discovery. (4) PAYOFF DEBT \u2014 cash in at least one detail planted earlier (a promise, prop, rumor, debt, or the previous HOOK) and plant one quiet detail this episode does not spend; the best turns feel inevitable in hindsight \u2014 seeded, not sprung. (5) COMPETENT OPPOSITION \u2014 antagonists make the strongest move available to THEM, not the move the plot needs; pressure comes from intelligence, never contrivance. (6) CONCRETE SCALE \u2014 grand is built from named specifics (who exactly watches, what exact thing changes hands, when exactly the clock runs out), never from adjectives.',
+        'CAST \u2014 before writing beats, sweep the established cast in [STORY MEMORY]: every character whose standing stakes the premise touches \u2014 family, office or jurisdiction, rivalry, debt, affection \u2014 is IN this episode unless the world supplies a stated reason for their absence. When an institution\'s authority is engaged (a sanctioned duel, a tribunal, an inspection), the officer who owns that jurisdiction is touched by definition \u2014 their absence from their own jurisdiction is a hole. And no character may appear as furniture: anyone you place in a scene must WANT something there and make at least one motive-driven move on it \u2014 presiding, watching, escorting, and attending are postures, not moves. Give every named presence their move, or take them off screen.',
+        'DELIBERATION \u2014 if you reason privately before answering, reason efficiently: settle each law\'s demand once, commit, and spend the token budget on the note itself. The budget is shared between reasoning and answer \u2014 deliberation that never ends produces no episode at all. Depth of thought shows in the final text, not in the length of the hesitation.',
+        'Be bold within the world\'s logic: prefer the daring, memorable choice over the safe one. The only success metric is whether the episode is masterpiece-level engaging for the player.',
+        'Write beats as pressure the player must answer \u2014 confrontations, deadlines, temptations with costs \u2014 never events that resolve themselves off-screen.',
+        'Honor any [editor notes] standing corrections present in the context \u2014 the episode you design must not repeat faults the editor has flagged.',
+        'FORECAST, NOT PROPHECY \u2014 this note is a plan made before the episode is played, and the LIVED story outranks it at every collision. Two forces may lawfully break any beat: the player\'s choices, and any NPC acting true to their own nature and current knowledge. Never force a character out of character, never bend probability, and never manufacture coincidence to rescue a beat \u2014 when a beat\'s moment no longer fits, translate its INTENT (the pressure or question it carried) into the current reality, or let it die. Choices must matter, or the simulation is a lie.',
+        'CONTINUITY LAW \u2014 you plan the episode; the STORYTELLER paces it. Write every beat as a situation that BEGINS on screen with the player present, never as one already underway. Events that involve the player \u2014 a challenge, a summons, an accusation, an arrival \u2014 must happen in scene where the player can react; they are never presumed already done. Only fully independent world movements may occur off screen, and the player discovers them, never inherits their consequences unexplained.',
+        'Rules: the note guides, never railroads \u2014 the storyteller must adapt beats to the player\'s choices; conclude naturally at the landing. An episode spans multiple scenes \u2014 never compress its whole arc into one scene, never pad past the landing. Under 340 words. Output ONLY the director\'s note text, no preamble.',
+    ].join('\n');
+
     // Second-draft pass: a rule list can only catch failures someone already
     // enumerated. This pass makes the model apply its whole corpus of story
     // judgment against a CONCRETE draft \u2014 the mechanism that catches the
@@ -291,6 +315,7 @@
         '3. THE CAST \u2014 which established character would a devoted viewer be angry is missing, wasted, or reduced to standing around? Whose stakes does this premise touch that the draft ignores? Give them their move, or the world\'s stated reason for their absence.',
         '4. SAFETY \u2014 where does the draft play safe: a predictable beat, an unearned convenience, a dilemma whose cost will not really hurt, an antagonist making a weak move? Sharpen every instance.',
         '5. LOGIC \u2014 does every element obey the world\'s own rules, established canon, and the format contract (intensity line; premise; beats with a TURN and a final DILEMMA; NPC & world initiative; landing; hook; arc)? Fix what breaks. Secrecy stays intact.',
+        'Deliberate efficiently \u2014 the token budget is shared between private reasoning and the final directive; settle your five interrogations decisively and spend the tokens on the improved cut itself.',
         'Rewrite discipline: keep everything that already works \u2014 this is a pass, not a do-over. Same format, same length limit, same tone. If the draft honors a player seed, the seed\'s intent remains untouchable. Output ONLY the final improved directive text \u2014 no commentary, no comparison, no preamble.',
     ].join('\n');
 
@@ -384,7 +409,7 @@
         delete settings.directorAuto;
         // Migration: upgrade the stored director prompt if the user never customized it
         // (covers the pre-2.37.0 default and the 2.37.0 default with the old HOOK line)
-        const legacyPrompts = [LEGACY_DIRECTOR_PROMPT, LEGACY_DIRECTOR_PROMPT_V240.replace(HOOK_LINE, HOOK_LINE_2370), LEGACY_DIRECTOR_PROMPT_V240, LEGACY_DIRECTOR_PROMPT_V241, LEGACY_DIRECTOR_PROMPT_V246, LEGACY_DIRECTOR_PROMPT_V248, LEGACY_DIRECTOR_PROMPT_V251, LEGACY_DIRECTOR_PROMPT_V252];
+        const legacyPrompts = [LEGACY_DIRECTOR_PROMPT, LEGACY_DIRECTOR_PROMPT_V240.replace(HOOK_LINE, HOOK_LINE_2370), LEGACY_DIRECTOR_PROMPT_V240, LEGACY_DIRECTOR_PROMPT_V241, LEGACY_DIRECTOR_PROMPT_V246, LEGACY_DIRECTOR_PROMPT_V248, LEGACY_DIRECTOR_PROMPT_V251, LEGACY_DIRECTOR_PROMPT_V252, LEGACY_DIRECTOR_PROMPT_V257];
         if (typeof settings.directorPrompt === 'string' && legacyPrompts.some(p => settings.directorPrompt.trim() === p.trim())) {
             settings.directorPrompt = DEFAULT_DIRECTOR_PROMPT;
         }
@@ -1377,10 +1402,10 @@
         });
     }
 
-    async function callLLM(messages, onPartial) {
+    async function callLLM(messages, onPartial, maxTokOverride) {
         const c = ctx();
         const pid = settings.profileId;
-        const maxTok = Math.min(32768, Math.max(256, Number(settings.maxTokens) || 4096));
+        const maxTok = Math.min(32768, Math.max(256, Number(maxTokOverride) || Number(settings.maxTokens) || 4096));
         stopRequested = false;
         try { abortCtl = new AbortController(); } catch (e) { abortCtl = null; }
 
@@ -2454,15 +2479,24 @@
         let raw = await callLLM(messages, onPartial);
         let sp = splitThinking(raw);
 
-        // Phase A: thinking consumed the whole budget -> feed the reasoning back, demand transcription
+        // Phase A: thinking consumed the whole budget -> feed the reasoning back,
+        // demand transcription. Two structural facts, learned from reasoning
+        // models burning 40k tokens here: (a) the recovery input is LONGER than
+        // the original (it embeds the pasted reasoning), so at the SAME budget a
+        // reasoning model re-deliberates over more text in an unchanged pot and
+        // is mathematically doomed to consume it again \u2014 the recovery pot must
+        // be bigger; (b) 'do not reason' cannot switch off a reasoning runtime,
+        // so give the forced phase an explicit one-sentence escape hatch.
+        const basePot = Math.min(32768, Math.max(256, Number(settings.maxTokens) || 4096));
+        const bigPot = Math.min(32768, Math.max(basePot * 2, basePot + 2048));
         let attempts = 0;
         while (!stopRequested && !sp.rest && sp.think && attempts < maxRe) {
             attempts++;
-            addBubble('note', '\u26A0 Answer consumed by thinking \u2014 recovery ' + attempts + '/' + maxRe + ': feeding your reasoning back, demanding the direct answer\u2026');
+            addBubble('note', '\u26A0 Answer consumed by thinking \u2014 recovery ' + attempts + '/' + maxRe + ': feeding the reasoning back with a ' + bigPot + '-token pot, demanding the direct answer\u2026');
             const msgs2 = [...messages,
-                { role: 'assistant', content: '<previous_reasoning>\n' + sp.think.slice(-20000) + '\n</previous_reasoning>' },
-                { role: 'user', content: '[SYSTEM] Above is your own prior reasoning \u2014 the analysis is DONE. Do not reason further. Convert it into the final answer and required blocks NOW, directly.' }];
-            raw = await callLLM(msgs2, onPartial);
+                { role: 'assistant', content: '<previous_reasoning>\n' + sp.think.slice(-12000) + '\n</previous_reasoning>' },
+                { role: 'user', content: '[SYSTEM] Above is your own prior reasoning \u2014 the analysis is DONE and final. Do not reason again; if your runtime forces a reasoning phase, keep it to a single sentence. Transcribe the decisions above into the final answer and required blocks NOW \u2014 answer text only.' }];
+            raw = await callLLM(msgs2, onPartial, bigPot);
             const sp2 = splitThinking(raw);
             if (!sp2.rest && !sp2.think) {
                 addBubble('note', 'Recovery made no progress (empty response) \u2014 stopping retries.');
@@ -2480,7 +2514,7 @@
             const msgs3 = [...messages,
                 { role: 'assistant', content: sp.rest },
                 { role: 'user', content: '[SYSTEM] Your output was cut off mid-block. Continue EXACTLY from the character where you stopped. Output ONLY the remainder \u2014 no repetition, no preamble, no further reasoning.' }];
-            raw = await callLLM(msgs3, onPartial);
+            raw = await callLLM(msgs3, onPartial, bigPot);
             const sp3 = splitThinking(raw);
             if (!sp3.rest) {
                 addBubble('note', 'Continuation returned nothing \u2014 stopping.');
@@ -3014,6 +3048,7 @@
                 'Also mine any OOC/meta exchanges in the chat (corrections in (( )), [brackets], or marked OOC) for lessons the storyteller was already told.',
                 'Discipline: only add a correction you can tie to concrete evidence in the context. If the story has not meaningfully changed since [CURRENT NOTES], or no genuine new weakness exists, return the current notes unchanged apart from removing items the storyteller has demonstrably fixed. NEVER invent problems to fill space \u2014 an unchanged or shorter list is a good answer.',
                 'Standing notes are for SYSTEMIC patterns only; do not add a note for a one-off slip that a single chat edit could fix.',
+                'Deliberate efficiently \u2014 the token budget is shared between private reasoning and the notes; reach verdicts, do not weigh endlessly.',
                 'Open with EXACTLY one unnumbered line: "NORTH STAR: <the single highest-leverage change that would most raise this story right now>" \u2014 one lever, chosen ruthlessly, never a list. Then write numbered standing corrections \u2014 as many as the story genuinely needs, no maximum. Each must be actionable and general enough to keep applying (e.g. "Track every named character present in a scene until they visibly exit"). Carry forward still-relevant items from [CURRENT NOTES] if provided, including the previous NORTH STAR when it still holds. Optimize for perfection, immersion, engagement, and realism \u2014 while staying token-efficient: no padding, no repetition, no filler; every line must earn its place. Output ONLY the notes.',
             ].join('\n');
             const user = buildContextBlock() + (await worldRulesBlock()) + (cur ? '\n\n[CURRENT NOTES]\n' + cur : '')

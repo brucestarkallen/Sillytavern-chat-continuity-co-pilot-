@@ -227,7 +227,11 @@ ok(SRC.includes('CRAFT \\u2014 the difference between competent and masterpiece'
 ok(SRC.includes('STACK MEANING before the centerpiece'), 'seed mode expands premises showrunner-style (meaning stack / phases / population / reprice)');
 ok(SRC.includes('NORTH STAR:'), 'critique output contract opens with the single highest-leverage NORTH STAR lever');
 ok(SRC.includes('FRICTIONLESS SUCCESS'), 'critique holds the story to the masterpiece bar, not only the defect floor');
-ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V248, LEGACY_DIRECTOR_PROMPT_V251, LEGACY_DIRECTOR_PROMPT_V252];'), 'stored 2.49-2.52 defaults auto-upgrade to the current default');
+ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V248, LEGACY_DIRECTOR_PROMPT_V251, LEGACY_DIRECTOR_PROMPT_V252, LEGACY_DIRECTOR_PROMPT_V257];'), 'stored 2.49-2.58 defaults auto-upgrade to the current default');
+ok(SRC.includes('DELIBERATION \\u2014 if you reason privately'), 'director default carries deliberation discipline for reasoning models');
+ok((SRC.match(/Deliberate efficiently \\u2014 the token budget is shared/g) || []).length === 2, 'showrunner and critique prompts carry deliberation discipline');
+ok(SRC.includes('raw = await callLLM(msgs2, onPartial, bigPot);'), 'think-consumed recovery runs in an ENLARGED pot — same-size recovery over longer input is mathematically doomed');
+ok(SRC.includes('keep it to a single sentence'), 'recovery gives forced reasoning phases an explicit escape hatch');
 ok(SRC.includes('CAST \\u2014 before writing beats, sweep the established cast'), 'director default carries the CAST law (stake sweep, jurisdiction-by-definition, no furniture placement)');
 ok(SRC.includes('FURNITURE CHARACTERS'), 'critique bar catches furniture characters and absent stakeholders');
 ok(SRC.includes('SHOWRUNNER running the second-draft pass'), 'directives get a showrunner second-draft pass (premise ambition, the memorable moment, wasted cast, safety, logic)');
@@ -457,6 +461,33 @@ await sleep(400);
 console.log = realLog;
 ok(/PLAYED-STATE: PARTIALLY PLAYED \u2014 about 2 storyteller replies/.test(String(auditPrompt)), 'a half-played directive reports its real reply count to the audit');
 ok(/narrated on screen is history and stays/.test(String(auditPrompt)), 'partial audits protect what actually aired');
+
+console.log('== v2.59.0 behavior: think-consumed recovery gets a bigger pot and succeeds ==');
+// A reasoning model burns the whole pot on <think>. The recovery call must
+// arrive with an ENLARGED maxTok and the transcription demand, then succeed.
+CA.maxTokens = 4096;            // -> bigPot = min(32768, max(8192, 6144)) = 8192
+CA.directorTwoPass = false;     // isolate Phase A
+CA.thinkRetries = 2;
+ctx.chatMetadata['continuityCopilot'] = {};
+for (const f of handlers.get('CHAT_CHANGED') || []) await f();
+const potCalls = [];
+ctx.ConnectionManagerRequestService = {
+    sendRequest: async (pid, messages, maxTok) => {
+        const last = (messages[messages.length - 1] && messages[messages.length - 1].content) || '';
+        potCalls.push({ maxTok, recovery: /Transcribe the decisions above/.test(last) });
+        if (potCalls.length === 1) return '<think>endless deliberation about the perfect premise, forty thousand tokens of it</think>';
+        return 'Intensity: standard\n1. EPISODE PREMISE — transcribed from the finished reasoning.';
+    },
+};
+console.log = logCap;
+document.getElementById('cc_dirnew').click();
+await sleep(400);
+console.log = realLog;
+ok(potCalls.length === 2, 'exactly one recovery round was needed (got ' + potCalls.length + ' calls)');
+ok(potCalls[0] && potCalls[0].maxTok === 4096 && !potCalls[0].recovery, 'first attempt ran at the configured budget');
+ok(potCalls[1] && potCalls[1].maxTok === 8192, 'the recovery ran in the enlarged pot (got ' + (potCalls[1] && potCalls[1].maxTok) + ', want 8192)');
+ok(potCalls[1] && potCalls[1].recovery, 'the recovery demanded transcription of the finished reasoning');
+ok(String((ctx.chatMetadata['continuityCopilot'].director || {}).text || '').includes('transcribed from the finished reasoning'), 'the directive was recovered and stored — the thinking was not wasted');
 
 console.log('');
 console.log('RESULT: ' + pass + ' passed, ' + fail + ' failed');
