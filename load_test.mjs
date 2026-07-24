@@ -232,7 +232,7 @@ ok(SRC.includes('CRAFT \\u2014 the difference between competent and masterpiece'
 ok(SRC.includes('STACK MEANING before the centerpiece'), 'seed mode expands premises showrunner-style (meaning stack / phases / population / reprice)');
 ok(SRC.includes('NORTH STAR:'), 'critique output contract opens with the single highest-leverage NORTH STAR lever');
 ok(SRC.includes('FRICTIONLESS SUCCESS'), 'critique holds the story to the masterpiece bar, not only the defect floor');
-ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262, LEGACY_DIRECTOR_PROMPT_V263, LEGACY_DIRECTOR_PROMPT_V264];'), 'stored 2.49-2.64 defaults auto-upgrade to the current default');
+ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262, LEGACY_DIRECTOR_PROMPT_V263, LEGACY_DIRECTOR_PROMPT_V264, LEGACY_DIRECTOR_PROMPT_V265];'), 'stored 2.49-2.65 defaults auto-upgrade to the current default');
 ok(SRC.includes('DELIBERATION \\u2014 if you reason privately'), 'director default carries deliberation discipline for reasoning models');
 ok((SRC.match(/Deliberate efficiently \\u2014 the token budget is shared/g) || []).length === 2, 'showrunner and critique prompts carry deliberation discipline');
 ok(SRC.includes('raw = await callLLM(msgs2, onPartial, bigPot);'), 'think-consumed recovery runs in an ENLARGED pot — same-size recovery over longer input is mathematically doomed');
@@ -662,6 +662,28 @@ ok(dflt.includes('never a summary line'), 'recognition reprice demands screen ti
 ok(dflt.includes('AMBIENT INTERLUDE') && dflt.includes('AMBIENT EXCEPTION'), 'ambient interlude shape exists and is exempted from the DILEMMA');
 ok(dflt.includes('dismissed\u2192reckoned-with'), 'turn-the-value vocabulary includes recognition flips');
 ok(SRC.includes('7. RECOGNITION') && SRC.includes('repriced on screen'), 'showrunner pass interrogates recognition staging');
+
+// (g) v2.66 audience balance: V265 frozen verbatim + hash, rotation, either-direction, warm register.
+const v265M = SRC.match(/const LEGACY_DIRECTOR_PROMPT_V265 = (\[[\s\S]*?\n    \]\.join\('\\n'\));/);
+ok(!!v265M, 'frozen V265 default is extractable from source');
+let v265 = '';
+try {
+    const HOOK5 = new Function('return ' + hookM[1])();
+    v265 = new Function('HOOK_LINE', 'return ' + v265M[1])(HOOK5);
+} catch (e) { ok(false, 'evaluating V265 threw: ' + (e && e.message)); }
+ok(v265.includes('lands in full before anything answers it'), 'the freeze preserved the v2.65 text verbatim (stored copies will match it)');
+ok(!v265.includes('never the same audience two episodes running'), 'the V265 freeze is genuinely the pre-rotation text, not a copy of the new default');
+ok(createHash('sha256').update(v265).digest('hex') === '025e5429b3a43fa61acf38a472c4ca9edf75c75f47b7b953f467c8f40bc2e8ef', 'V265 freeze is byte-identical (sha256 pinned) \u2014 a freeze permits no edit, phrase-preserving or not');
+ok(v265.trim() !== dflt.trim(), 'the new default genuinely differs from the frozen v2.65 default');
+const migrates66 = (stored) => [v262, v263, v264, v265].some(pp => stored.trim() === pp.trim());
+ok(migrates66(v265 + '\n'), 'migration predicate: an untouched stored v2.65 default upgrades');
+ok(!migrates66(v265 + '\nMY CUSTOM LAW'), 'migration predicate: a customized v2.65 prompt is never overwritten');
+ok(dflt.includes('never the same audience two episodes running'), 'audience rotation guard: no recurring-hater monoculture');
+ok(dflt.includes('wrong in either direction'), 'readings may be wrong high (legend) or wrong low (contempt)');
+ok(dflt.includes('Warm repricing is not a lesser episode'), 'warm register is first-class \u2014 close cast is a lawful audience');
+ok(dflt.includes('protective\u2192trusting') && dflt.includes('legend\u2192human'), 'shift vocabulary carries warm and deflationary examples');
+ok(dflt.includes('standing cast and [STORY MEMORY] stances before anyone new is invented'), 'skeptic invention is capped behind the standing cast');
+ok(SRC.includes('re-aim at a reading not yet moved'), 'showrunner enforces audience rotation and warm parity');
 
 console.log('');
 console.log('RESULT: ' + pass + ' passed, ' + fail + ' failed');
