@@ -18,6 +18,7 @@
  * Exit code 0 = safe to ship. Non-zero = DO NOT PUSH.
  */
 import { mkdtempSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -231,7 +232,7 @@ ok(SRC.includes('CRAFT \\u2014 the difference between competent and masterpiece'
 ok(SRC.includes('STACK MEANING before the centerpiece'), 'seed mode expands premises showrunner-style (meaning stack / phases / population / reprice)');
 ok(SRC.includes('NORTH STAR:'), 'critique output contract opens with the single highest-leverage NORTH STAR lever');
 ok(SRC.includes('FRICTIONLESS SUCCESS'), 'critique holds the story to the masterpiece bar, not only the defect floor');
-ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262, LEGACY_DIRECTOR_PROMPT_V263];'), 'stored 2.49-2.63 defaults auto-upgrade to the current default');
+ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262, LEGACY_DIRECTOR_PROMPT_V263, LEGACY_DIRECTOR_PROMPT_V264];'), 'stored 2.49-2.64 defaults auto-upgrade to the current default');
 ok(SRC.includes('DELIBERATION \\u2014 if you reason privately'), 'director default carries deliberation discipline for reasoning models');
 ok((SRC.match(/Deliberate efficiently \\u2014 the token budget is shared/g) || []).length === 2, 'showrunner and critique prompts carry deliberation discipline');
 ok(SRC.includes('raw = await callLLM(msgs2, onPartial, bigPot);'), 'think-consumed recovery runs in an ENLARGED pot — same-size recovery over longer input is mathematically doomed');
@@ -567,7 +568,7 @@ ok(String(CA.directorPrompt || '').includes('one line per likely answer naming h
 ok(String(CA.directorPrompt || '').includes('(7) THEME'), 'craft doctrine gained the THEME law (value under test, felt not announced)');
 // (b) The showrunner pass hunts sovereignty violations and cannot sharpen into illogic.
 ok(SRC.includes('6. SOVEREIGNTY \\u2014 hunt every sentence that decides FOR the player'), 'showrunner pass carries the SOVEREIGNTY interrogation');
-ok(SRC.includes('settle your six interrogations'), 'showrunner deliberation counts all six interrogations');
+ok(SRC.includes('settle your seven interrogations'), 'showrunner deliberation counts all seven interrogations');
 ok(SRC.includes('scripts the player\\\'s half of a collision is a downgrade'), 'sharpening has an explicit truth/freedom counterweight');
 ok(SRC.includes('plausible causation \\u2014 would a skeptical viewer accept why each beat happens now'), 'LOGIC interrogation now checks causal plausibility, not just rule compliance');
 // (c) The live storyteller wrapper: episode ends on the ANSWERED question, never on reaching a scripted landing.
@@ -640,6 +641,27 @@ ok(v263.trim() !== dflt.trim(), 'the new default genuinely differs from the froz
 const migrates64 = (stored) => [v262, v263].some(pp => stored.trim() === pp.trim());
 ok(migrates64(v263 + '\n'), 'migration predicate: an untouched stored v2.63 default upgrades');
 ok(!migrates64(v263 + '\nMY CUSTOM LAW'), 'migration predicate: a user-customized prompt is never overwritten');
+
+// (f) v2.65 recognition grammar: V264 frozen verbatim, upgrades, and the new laws exist.
+const v264M = SRC.match(/const LEGACY_DIRECTOR_PROMPT_V264 = (\[[\s\S]*?\n    \]\.join\('\\n'\));/);
+ok(!!v264M, 'frozen V264 default is extractable from source');
+let v264 = '';
+try {
+    const HOOK4 = new Function('return ' + hookM[1])();
+    v264 = new Function('HOOK_LINE', 'return ' + v264M[1])(HOOK4);
+} catch (e) { ok(false, 'evaluating V264 threw: ' + (e && e.message)); }
+ok(v264.includes('Plan the temptation, never the yielding'), 'the freeze preserved the v2.64 text verbatim (stored copies will match it)');
+ok(!v264.includes('RECOGNITION LAW'), 'the V264 freeze is genuinely the pre-recognition text, not a copy of the new default');
+ok(createHash('sha256').update(v264).digest('hex') === '0acbd3b073a0f7ed69de16da2465ccab52580d7d5a4eec78845ece753067482c', 'V264 freeze is byte-identical (sha256 pinned) \u2014 a freeze permits no edit, phrase-preserving or not');
+ok(v264.trim() !== dflt.trim(), 'the new default genuinely differs from the frozen v2.64 default');
+const migrates65 = (stored) => [v262, v263, v264].some(pp => stored.trim() === pp.trim());
+ok(migrates65(v264 + '\n'), 'migration predicate: an untouched stored v2.64 default upgrades');
+ok(!migrates65(v264 + '\nMY CUSTOM LAW'), 'migration predicate: a customized v2.64 prompt is never overwritten');
+ok(dflt.includes('RECOGNITION LAW') && dflt.includes('the OLD reading scores first'), 'director default carries the RECOGNITION LAW with resistance-first staging');
+ok(dflt.includes('never a summary line'), 'recognition reprice demands screen time, not summary');
+ok(dflt.includes('AMBIENT INTERLUDE') && dflt.includes('AMBIENT EXCEPTION'), 'ambient interlude shape exists and is exempted from the DILEMMA');
+ok(dflt.includes('dismissed\u2192reckoned-with'), 'turn-the-value vocabulary includes recognition flips');
+ok(SRC.includes('7. RECOGNITION') && SRC.includes('repriced on screen'), 'showrunner pass interrogates recognition staging');
 
 console.log('');
 console.log('RESULT: ' + pass + ' passed, ' + fail + ' failed');
