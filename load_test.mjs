@@ -232,7 +232,7 @@ ok(SRC.includes('CRAFT \\u2014 the difference between competent and masterpiece'
 ok(SRC.includes('STACK MEANING before the centerpiece'), 'seed mode expands premises showrunner-style (meaning stack / phases / population / reprice)');
 ok(SRC.includes('NORTH STAR:'), 'critique output contract opens with the single highest-leverage NORTH STAR lever');
 ok(SRC.includes('FRICTIONLESS SUCCESS'), 'critique holds the story to the masterpiece bar, not only the defect floor');
-ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262, LEGACY_DIRECTOR_PROMPT_V263, LEGACY_DIRECTOR_PROMPT_V264, LEGACY_DIRECTOR_PROMPT_V265];'), 'stored 2.49-2.65 defaults auto-upgrade to the current default');
+ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262, LEGACY_DIRECTOR_PROMPT_V263, LEGACY_DIRECTOR_PROMPT_V264, LEGACY_DIRECTOR_PROMPT_V265, LEGACY_DIRECTOR_PROMPT_V266];'), 'stored 2.49-2.66 defaults auto-upgrade to the current default');
 ok(SRC.includes('DELIBERATION \\u2014 if you reason privately'), 'director default carries deliberation discipline for reasoning models');
 ok((SRC.match(/Deliberate efficiently \\u2014 the token budget is shared/g) || []).length === 2, 'showrunner and critique prompts carry deliberation discipline');
 ok(SRC.includes('raw = await callLLM(msgs2, onPartial, bigPot);'), 'think-consumed recovery runs in an ENLARGED pot — same-size recovery over longer input is mathematically doomed');
@@ -299,6 +299,7 @@ CA.directorMode = 'auto';
 CA.streaming = false;
 CA.critiqueOnEpisode = true;
 CA.critiqueAuto = 0;
+CA.directorWatcherPass = false; // legacy flow sections prove the two-pass contract; the three-pass path has its own section below
 ctx.chatMetadata['continuityCopilot'] = { director: { text: 'SECRET: episode one beats', episode: 1, concluded: false, ts: 1 }, directorEp: 1 };
 ctx.chat.push({ is_user: false, mes: 'The duel ends and the crowd goes silent. [EPISODE_END]' });
 console.log = logCap;
@@ -657,11 +658,10 @@ ok(v264.trim() !== dflt.trim(), 'the new default genuinely differs from the froz
 const migrates65 = (stored) => [v262, v263, v264].some(pp => stored.trim() === pp.trim());
 ok(migrates65(v264 + '\n'), 'migration predicate: an untouched stored v2.64 default upgrades');
 ok(!migrates65(v264 + '\nMY CUSTOM LAW'), 'migration predicate: a customized v2.64 prompt is never overwritten');
-ok(dflt.includes('RECOGNITION LAW') && dflt.includes('the OLD reading scores first'), 'director default carries the RECOGNITION LAW with resistance-first staging');
-ok(dflt.includes('never a summary line'), 'recognition reprice demands screen time, not summary');
+ok(dflt.includes('real screen time instead of a summary line'), 'delights palette demands screen time for repricing payoffs');
 ok(dflt.includes('AMBIENT INTERLUDE') && dflt.includes('AMBIENT EXCEPTION'), 'ambient interlude shape exists and is exempted from the DILEMMA');
 ok(dflt.includes('dismissed\u2192reckoned-with'), 'turn-the-value vocabulary includes recognition flips');
-ok(SRC.includes('7. RECOGNITION') && SRC.includes('repriced on screen'), 'showrunner pass interrogates recognition staging');
+ok(SRC.includes('7. PAYOFF ON SCREEN') && SRC.includes('A payoff summarized into aftermath is a skipped payoff'), 'showrunner interrogates payoff staging as craft');
 
 // (g) v2.66 audience balance: V265 frozen verbatim + hash, rotation, either-direction, warm register.
 const v265M = SRC.match(/const LEGACY_DIRECTOR_PROMPT_V265 = (\[[\s\S]*?\n    \]\.join\('\\n'\));/);
@@ -674,16 +674,96 @@ try {
 ok(v265.includes('lands in full before anything answers it'), 'the freeze preserved the v2.65 text verbatim (stored copies will match it)');
 ok(!v265.includes('never the same audience two episodes running'), 'the V265 freeze is genuinely the pre-rotation text, not a copy of the new default');
 ok(createHash('sha256').update(v265).digest('hex') === '025e5429b3a43fa61acf38a472c4ca9edf75c75f47b7b953f467c8f40bc2e8ef', 'V265 freeze is byte-identical (sha256 pinned) \u2014 a freeze permits no edit, phrase-preserving or not');
+ok(v265.includes('RECOGNITION LAW') && v265.includes('the OLD reading scores first'), 'recognition-era freeze carries the law (historical witness)');
 ok(v265.trim() !== dflt.trim(), 'the new default genuinely differs from the frozen v2.65 default');
 const migrates66 = (stored) => [v262, v263, v264, v265].some(pp => stored.trim() === pp.trim());
 ok(migrates66(v265 + '\n'), 'migration predicate: an untouched stored v2.65 default upgrades');
 ok(!migrates66(v265 + '\nMY CUSTOM LAW'), 'migration predicate: a customized v2.65 prompt is never overwritten');
-ok(dflt.includes('never the same audience two episodes running'), 'audience rotation guard: no recurring-hater monoculture');
-ok(dflt.includes('wrong in either direction'), 'readings may be wrong high (legend) or wrong low (contempt)');
-ok(dflt.includes('Warm repricing is not a lesser episode'), 'warm register is first-class \u2014 close cast is a lawful audience');
-ok(dflt.includes('protective\u2192trusting') && dflt.includes('legend\u2192human'), 'shift vocabulary carries warm and deflationary examples');
-ok(dflt.includes('standing cast and [STORY MEMORY] stances before anyone new is invented'), 'skeptic invention is capped behind the standing cast');
-ok(SRC.includes('re-aim at a reading not yet moved'), 'showrunner enforces audience rotation and warm parity');
+ok(!dflt.includes('RECOGNITION LAW') && !dflt.includes('never the same audience two episodes running'), 'v2.67 default carries no recognition legislation \u2014 the insight moved to taste');
+ok(dflt.includes('cold (the room that muttered who-is-this-guy') && dflt.includes('or warm (a best friend re-seeing'), 'delights palette names cold and warm registers as equals');
+ok(dflt.includes('a masterpiece owes the player nothing but itself'), 'delights are a palette, not a quota \u2014 delight-free episodes are lawful');
+ok(dflt.includes('taste knowledge, not a quota'), 'palette is explicitly taste, not law');
+
+// (h) v2.67 three-layer room: V266 frozen + hashed, watcher pass exists, wired, sovereign, minimal-cut.
+const v266M = SRC.match(/const LEGACY_DIRECTOR_PROMPT_V266 = (\[[\s\S]*?\n    \]\.join\('\\n'\));/);
+ok(!!v266M, 'frozen V266 default is extractable from source');
+let v266 = '';
+try {
+    const HOOK6 = new Function('return ' + hookM[1])();
+    v266 = new Function('HOOK_LINE', 'return ' + v266M[1])(HOOK6);
+} catch (e) { ok(false, 'evaluating V266 threw: ' + (e && e.message)); }
+ok(createHash('sha256').update(v266).digest('hex') === '56360487bed0a38f4bd3f6ad8f0046b71c301e184c695da226c1d16ac984426e', 'V266 freeze is byte-identical (sha256 pinned) \u2014 a freeze permits no edit, phrase-preserving or not');
+ok(v266.includes('never the same audience two episodes running'), 'V266 freeze carries the rotation law (historical witness)');
+ok(v266.trim() !== dflt.trim(), 'the new default genuinely differs from the frozen v2.66 default');
+const migrates67 = (stored) => [v262, v263, v264, v265, v266].some(pp => stored.trim() === pp.trim());
+ok(migrates67(v266 + '\n'), 'migration predicate: an untouched stored v2.66 default upgrades');
+ok(!migrates67(v266 + '\nMY CUSTOM LAW'), 'migration predicate: a customized v2.66 prompt is never overwritten');
+ok(SRC.includes('const WATCHER_PASS_PROMPT'), 'watcher pass prompt exists');
+ok(SRC.includes('MINIMAL CUT') && SRC.includes('if the episode already airs, output it unchanged'), 'watcher is a minimal final cut, not a third rewrite');
+ok(SRC.includes('wish for situations, never for answers'), 'watcher sovereignty: enjoyment may never script the player');
+ok(SRC.includes('slow is welcome when slow is what the story is hungry for'), 'watcher legitimizes slow episodes by taste, not schedule');
+ok(SRC.includes("tick.phase('watcher final cut')") && SRC.includes('directorWatcherPass') && SRC.includes('shipping the showrunner cut'), 'watcher pass is wired into the directive flow with empty-fallback');
+ok(SRC.includes('directorWatcherPass: true,'), 'watcher pass defaults on');
+ok(SRC.includes("el('cc_dir_watcher').checked = settings.directorWatcherPass !== false;") && SRC.includes("settings.directorWatcherPass = el('cc_dir_watcher').checked;"), 'watcher toggle load/save round-trips');
+ok(!dflt.includes('every fourth or fifth episode') && dflt.includes('available whenever the story is hungry for breath'), 'ambient interlude is available on demand, not on a schedule');
+
+console.log('== v2.67.0 behavior: the watcher third pass ==');
+const wCalls = [];
+let watcherReturn = 'Intensity: standard\nWATCHER AIRED ONE: same cut, one delight staged.';
+let srReturn = 'Intensity: standard\nSHOWRUNNER CUT ONE: the rematch, sharpened.';
+globalThis.__watcherSys = ''; globalThis.__watcherUsr = '';
+ctx.ConnectionManagerRequestService = {
+    sendRequest: async (pid, messages) => {
+        const sys = (messages && messages[0] && messages[0].content) || '';
+        const usr = (messages && messages[messages.length - 1] && messages[messages.length - 1].content) || '';
+        if (sys.includes('THE WATCHER')) { wCalls.push('watcher'); globalThis.__watcherSys = sys; globalThis.__watcherUsr = usr; return watcherReturn; }
+        if (sys.includes('SHOWRUNNER running the second-draft pass')) { wCalls.push('review'); return srReturn; }
+        if (sys.includes('expert story director')) { wCalls.push('directive'); return 'Intensity: standard\n1. EPISODE PREMISE: the rematch.'; }
+        wCalls.push('other'); return 'ONGOING \u2014 fine';
+    },
+};
+CA.directorWatcherPass = true;
+CA.directorTwoPass = true;
+CA.directorMode = 'off';
+CA.streaming = false;
+ctx.chatMetadata['continuityCopilot'] = { director: null, directorEp: 0 };
+console.log = logCap;
+document.getElementById('cc_dirnew').click();
+await sleep(400);
+console.log = realLog;
+const w1 = wCalls.join(',');
+ok(w1 === 'directive,review,watcher', 'three-pass order: maker, showrunner, watcher (got: ' + w1 + ')');
+ok(String(((ctx.chatMetadata['continuityCopilot'] || {}).director || {}).text || '').includes('WATCHER AIRED ONE'), 'the STORED directive is the watcher final cut');
+ok(globalThis.__watcherUsr.includes('[SCREENING COPY') && globalThis.__watcherUsr.includes('SHOWRUNNER CUT ONE'), 'the showrunner cut travels to the couch as the screening copy');
+ok(globalThis.__watcherSys.includes('MINIMAL CUT') && !globalThis.__watcherSys.includes('This episode is a RESTART'), 'fresh episode: watcher briefed for minimal cut, no restart addendum');
+// empty watcher output ships the showrunner cut
+wCalls.length = 0; watcherReturn = ''; srReturn = 'Intensity: standard\nSHOWRUNNER CUT TWO: fallback proof.';
+ctx.chatMetadata['continuityCopilot'] = { director: null, directorEp: 0 };
+console.log = logCap;
+document.getElementById('cc_dirnew').click();
+await sleep(400);
+console.log = realLog;
+const dW2 = String(((ctx.chatMetadata['continuityCopilot'] || {}).director || {}).text || '');
+ok(wCalls.join(',') === 'directive,review,watcher' && dW2.includes('SHOWRUNNER CUT TWO') && !dW2.includes('WATCHER AIRED'), 'empty watcher pass falls back to the showrunner cut');
+// toggle off: exactly two calls, no watcher
+wCalls.length = 0; srReturn = 'Intensity: standard\nSHOWRUNNER CUT THREE: two-pass toggle proof.';
+CA.directorWatcherPass = false;
+ctx.chatMetadata['continuityCopilot'] = { director: null, directorEp: 0 };
+console.log = logCap;
+document.getElementById('cc_dirnew').click();
+await sleep(400);
+console.log = realLog;
+ok(wCalls.join(',') === 'directive,review' && String(((ctx.chatMetadata['continuityCopilot'] || {}).director || {}).text || '').includes('SHOWRUNNER CUT THREE'), 'watcher toggle off restores the exact two-pass contract');
+// restart: the watcher receives the never-aired warning
+wCalls.length = 0; watcherReturn = 'Intensity: standard\nWATCHER AIRED FOUR: the road not taken, enjoyed.'; srReturn = 'Intensity: standard\nSHOWRUNNER CUT FOUR.';
+CA.directorWatcherPass = true;
+globalThis.__watcherSys = '';
+console.log = logCap;
+document.getElementById('cc_dirnew').click();
+await sleep(400);
+console.log = realLog;
+ok(globalThis.__watcherSys.includes('This episode is a RESTART'), 'restart: the watcher is told the discarded directive never aired');
+ok(String(((ctx.chatMetadata['continuityCopilot'] || {}).director || {}).text || '').includes('WATCHER AIRED FOUR'), 'restart flow ships the watcher final cut');
 
 console.log('');
 console.log('RESULT: ' + pass + ' passed, ' + fail + ' failed');
