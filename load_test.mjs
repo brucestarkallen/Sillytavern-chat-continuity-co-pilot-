@@ -231,7 +231,7 @@ ok(SRC.includes('CRAFT \\u2014 the difference between competent and masterpiece'
 ok(SRC.includes('STACK MEANING before the centerpiece'), 'seed mode expands premises showrunner-style (meaning stack / phases / population / reprice)');
 ok(SRC.includes('NORTH STAR:'), 'critique output contract opens with the single highest-leverage NORTH STAR lever');
 ok(SRC.includes('FRICTIONLESS SUCCESS'), 'critique holds the story to the masterpiece bar, not only the defect floor');
-ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V252, LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262];'), 'stored 2.49-2.62 defaults auto-upgrade to the current default');
+ok(SRC.includes('LEGACY_DIRECTOR_PROMPT_V257, LEGACY_DIRECTOR_PROMPT_V262, LEGACY_DIRECTOR_PROMPT_V263];'), 'stored 2.49-2.63 defaults auto-upgrade to the current default');
 ok(SRC.includes('DELIBERATION \\u2014 if you reason privately'), 'director default carries deliberation discipline for reasoning models');
 ok((SRC.match(/Deliberate efficiently \\u2014 the token budget is shared/g) || []).length === 2, 'showrunner and critique prompts carry deliberation discipline');
 ok(SRC.includes('raw = await callLLM(msgs2, onPartial, bigPot);'), 'think-consumed recovery runs in an ENLARGED pot — same-size recovery over longer input is mathematically doomed');
@@ -596,6 +596,50 @@ ok(v262.trim() !== dflt.trim(), 'the new default genuinely differs from the froz
 const migrates = (stored) => [v262].some(pp => stored.trim() === pp.trim());
 ok(migrates(v262 + '\n'), 'migration predicate: an untouched stored v2.62 default upgrades');
 ok(!migrates(v262 + '\nMY CUSTOM LAW'), 'migration predicate: a user-customized prompt is never overwritten');
+
+console.log('== v2.64.0 behavior: total sovereignty — no seam left for the plan to script the player ==');
+// v2.63 banned the player as "author of a response" and a live directive
+// promptly scripted the player's ENTIRE duel as involuntary events ("his
+// Reaving surfaces involuntarily"), scripted his dialogue ("Fine."), and
+// presupposed the reveal at premise level ("the question isn't whether his
+// tier comes out"). Each seam is now closed, and the version stamp that
+// silently stayed at 2.62.0 is now locked to the manifest.
+// (a) Version lock: the in-code header stamp can never drift from the manifest again.
+const verM = SRC.match(/const VERSION = '([^']+)';/);
+let maniVer = '';
+try { maniVer = JSON.parse(readFileSync(join(HERE, 'manifest.json'), 'utf8')).version; } catch (e) {}
+ok(!!verM && !!maniVer && verM[1] === maniVer, 'in-code VERSION stamp matches manifest.json (' + (verM && verM[1]) + ' vs ' + maniVer + ')');
+// (b) The shipping default carries the total-subject ban.
+const dp = String(CA.directorPrompt || '');
+ok(dp.includes('never be the SUBJECT of a planned sentence'), 'beats law: the player may never be the subject of any planned sentence');
+ok(dp.includes('involuntary is still theirs'), 'the involuntary loophole is named and closed');
+ok(dp.includes('"his real tier comes out" is a stolen choice'), 'the reveal-by-plan case is taught by example');
+ok(dp.includes("the question isn't whether the player does X"), 'premise-level presupposition is banned with its tell named');
+ok(dp.includes("The TURN is the WORLD's move"), 'the TURN must be an NPC/world move, never a player performance');
+ok(dp.includes('choreograph ONLY the NPC'), 'scheduled events choreograph only the NPC half — every player answer stays blank');
+ok(!dp.includes('never as the author of a response'), 'the old response-only phrasing (the seam) is gone from the shipping default');
+// (c) Showrunner pass hunts the whole class.
+ok(SRC.includes('theft with an alibi'), 'SOVEREIGNTY names involuntary scripting as theft with an alibi');
+ok(SRC.includes('even one scripted word'), 'SOVEREIGNTY catches scripted player dialogue');
+ok(SRC.includes('STAGED by the world and completed by the player'), 'THE MOMENT must be world-staged, never a scripted player action');
+// (d) Live wrapper: the storyteller is told slips belong to the player too.
+for (const f of handlers.get('CHAT_CHANGED') || []) await f();
+const wrap64 = dirSlot();
+ok(wrap64.includes('neither are their slips'), 'wrapper: player slips are player events');
+ok(wrap64.includes('let the player decide what breaks'), 'wrapper: pressure is staged, breakage is played');
+// (e) Migration: v2.63 default frozen verbatim, upgrades, customization untouched.
+const v263M = SRC.match(/const LEGACY_DIRECTOR_PROMPT_V263 = (\[[\s\S]*?\n    \]\.join\('\\n'\));/);
+ok(!!v263M, 'frozen V263 default is extractable from source');
+let v263 = '';
+try {
+    const HOOK2 = new Function('return ' + hookM[1])();
+    v263 = new Function('HOOK_LINE', 'return ' + v263M[1])(HOOK2);
+} catch (e) { ok(false, 'evaluating V263 threw: ' + (e && e.message)); }
+ok(v263.includes('never as the author of a response'), 'the freeze preserved the v2.63 text verbatim (stored copies will match it)');
+ok(v263.trim() !== dflt.trim(), 'the new default genuinely differs from the frozen v2.63 default');
+const migrates64 = (stored) => [v262, v263].some(pp => stored.trim() === pp.trim());
+ok(migrates64(v263 + '\n'), 'migration predicate: an untouched stored v2.63 default upgrades');
+ok(!migrates64(v263 + '\nMY CUSTOM LAW'), 'migration predicate: a user-customized prompt is never overwritten');
 
 console.log('');
 console.log('RESULT: ' + pass + ' passed, ' + fail + ' failed');
